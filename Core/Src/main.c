@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 #include "usbd_cdc_if.h"
 #include "ESP01.h"
+#include "button.h"
 #include "config.h"
 #include <stdbool.h>
 /* USER CODE END Includes */
@@ -64,12 +65,17 @@ typedef struct{
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define PRESSED				0
+#define modeIDLE			0
+#define modeONE				1
+#define modeTWO				2
+
 #define viaUART				0
 #define viaWIFI				1
 #define viaUSB				2
+
 #define NBYTES				4
-#define POSID				4
-#define bytesSent 			4
+#define SIZEBUFADC			48
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -88,18 +94,23 @@ TIM_HandleTypeDef htim4;
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
+_sButton myButton;
 _eProtocolo estadoProtocolo;
 _sDato datosComSerie, datosComUSB;
 
-uint16_t bufADC[8];
+uint16_t bufADC[SIZEBUFADC][8];
+uint8_t iwBufADC = 0, irBufADC = 0;
+
+uint8_t mode		= 0;
 uint8_t time10ms 	= 40;
+uint8_t	time40ms	= 4;
 uint8_t time100ms	= 10;
-uint8_t time500ms	= 5;
-uint32_t modeIDLE	= 0xF0008000;
-uint32_t modeONE 	= 0xF0800000;
-uint32_t modeTWO 	= 0xF0A00000;
+uint8_t time500ms	= 50;
+uint32_t maskIDLE	= 0xF0008000;
+uint32_t maskONE 	= 0xF0800000;
+uint32_t maskTWO 	= 0xF0A00000;
 uint32_t mask		= 0x80000000;
-uint32_t myHB		= 0xF088AA00;
+uint32_t myHB		= 0x80000000;//0xF088AA00;
 
 /* USER CODE END PV */
 
@@ -123,6 +134,14 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc);
 
 void heartbeatTask();
 
+void do10ms();
+
+void do40ms();
+
+void do100ms();
+
+void do500ms();
+
 void decodeProtocol(_sDato *datosCom);
 
 void decodeData(_sDato *);
@@ -130,6 +149,10 @@ void decodeData(_sDato *);
 void communicationTask(_sDato *datosCom, uint8_t source);
 
 void handleUSBCommunication();
+
+void buttonTask(_sButton *button);
+
+void stateTask();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -138,10 +161,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	if (htim->Instance == TIM1)
 	{
 		if (time10ms)
-		{
 			time10ms--;
-		}
+		HAL_ADC_Start_DMA(&hadc1, (uint32_t *)&bufADC[iwBufADC], 8);
 	}
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
+	iwBufADC++;
+	iwBufADC &= (SIZEBUFADC-1);
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
@@ -157,10 +184,6 @@ void USB_Receive(uint8_t *buf, uint16_t len){
 	datosComUSB.newData = true;
 }
 
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
-
-}
-
 void heartbeatTask(){
 	if (myHB & mask)
 		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 0);	// ON
@@ -171,6 +194,48 @@ void heartbeatTask(){
 	if (!mask)
 		mask = 0x80000000;						// If there's a 0 in that place, changes the actual positions to compare the right way
 
+}
+
+void do10ms(){
+	// do something
+	time10ms = 40;
+}
+
+void do40ms(){
+	if (!time40ms){
+		myButton.value = HAL_GPIO_ReadPin(SW0_GPIO_Port, SW0_Pin);
+		checkMEF(&myButton);
+		buttonTask(&myButton);
+		time40ms = 4;
+	}
+	else
+	{
+		time40ms--;
+	}
+}
+
+void do100ms(){
+	if (!time100ms){
+		heartbeatTask();
+		time100ms = 10;
+	}
+	else
+	{
+		time100ms--;
+	}
+}
+
+void do500ms(){
+	if (!time500ms){
+		datosComSerie.bufferRx[datosComSerie.indexWriteRx+NBYTES]=ALIVE;
+		datosComSerie.indexStart=datosComSerie.indexWriteRx;
+		decodeData(&datosComSerie);
+		time500ms = 50;
+	}
+	else
+	{
+		time500ms--;
+	}
 }
 
 void decodeProtocol(_sDato *datosCom){
@@ -256,19 +321,19 @@ void decodeData(_sDato *datosCom){
     auxBuffTx[indiceAux++]='9';
     auxBuffTx[indiceAux++]='7';
 
-    switch (datosCom->bufferRx[datosCom->indexStart+POSID]) {
+    switch (datosCom->bufferRx[datosCom->indexStart+NBYTES]) {
         case ALIVE:
             auxBuffTx[indiceAux++] = ALIVE;
             auxBuffTx[indiceAux++] = ACKNOWLEDGE;
-            auxBuffTx[bytesSent] = 0x05;
+            auxBuffTx[NBYTES] = 0x05;
             break;
         case FIRMWARE:
         	auxBuffTx[indiceAux++] = FIRMWARE;
-			auxBuffTx[bytesSent] = 0x04;
+			auxBuffTx[NBYTES] = 0x04;
         	break;
         default:
 			auxBuffTx[indiceAux++] = UNKNOWNCOMMAND;
-			auxBuffTx[bytesSent] = 0x04;
+			auxBuffTx[NBYTES] = 0x04;
 			break;
 	}
     checksum = 0;
@@ -298,6 +363,36 @@ void communicationTask(_sDato *datosCom, uint8_t source){
 				datosCom->newData = false;
 			}
 		}
+	}
+}
+
+void buttonTask(_sButton *button){
+	switch (button->estado)
+	{
+		case DOWN:
+			if (button->value == PRESSED)
+				HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 0);	// ON
+			break;
+		default:
+			break;
+	}
+}
+
+void stateTask()
+{
+	switch (mode)
+	{
+		case modeIDLE:
+			myHB = maskIDLE;
+			break;
+		case modeONE:
+			myHB = maskONE;
+			break;
+		case modeTWO:
+			myHB = maskTWO;
+			break;
+		default:
+			break;
 	}
 }
 
@@ -339,6 +434,7 @@ int main(void)
   MX_ADC2_Init();
   MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
+  inicializarBoton(&myButton);
   HAL_TIM_Base_Start_IT(&htim1);
   HAL_UART_Receive_IT(&huart1, &datosComSerie.bufferRx[datosComSerie.indexWriteRx], 1);
   CDC_AttachRxData(USB_Receive);
@@ -355,27 +451,10 @@ int main(void)
     /* USER CODE BEGIN 3 */
 	  if (!time10ms)						// Every 10 ms
 	  {
-		  if (!time100ms)					// Every 100 ms
-		  {
-			  heartbeatTask();
-			  time100ms = 10;
-			  if (!time500ms)				// Every 500 ms
-			  {
-				  datosComSerie.bufferRx[datosComSerie.indexWriteRx+POSID]=ALIVE;
-				  datosComSerie.indexStart=datosComSerie.indexWriteRx;
-				  decodeData(&datosComSerie);
-				  time500ms = 5;
-			  }
-			  else
-			  {
-				  time500ms--;
-			  }
-		  }
-		  else
-		  {
-			  time100ms--;
-		  }
-		  time10ms = 40;
+		  do10ms();
+		  do40ms();
+		  do100ms();
+		  do500ms();
 	  }
 	  communicationTask(&datosComSerie, viaUART);
 	  communicationTask(&datosComUSB, viaUSB);
