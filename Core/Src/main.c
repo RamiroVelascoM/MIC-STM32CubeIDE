@@ -23,9 +23,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "usbd_cdc_if.h"
-#include "ESP01.h"
 #include "button.h"
 #include "config.h"
+#include "ESP01.h"
 #include <stdbool.h>
 /* USER CODE END Includes */
 
@@ -43,39 +43,68 @@ typedef enum{
 
 typedef enum{
     ACKNOWLEDGE = 0x0D,
+	STARTCONFIG = 0xEE,
     ALIVE = 0xF0,
-    STARTCONFIG = 0xEE,
     FIRMWARE = 0xF1,
+	ANALOG_IR = 0xF2,
     UNKNOWNCOMMAND = 0xFF
 }_eID;
 
 typedef struct{
-    uint8_t newData;                    //!< TiemOut para reiniciar la mÃ¡quina si se interrumpe la comunicaciÃ³n
-    uint8_t indexStart;                 //!< Indice para saber en que parte del buffer circular arranca el ID
-    uint8_t cheksumRx;                  //!< Cheksumm RX
-    uint8_t indexWriteRx;               //!< Indice de escritura del buffer circular de recepciÃ³n
-    uint8_t indexReadRx;                //!< Indice de lectura del buffer circular de recepciÃ³n
-    uint8_t indexWriteTx;               //!< Indice de escritura del buffer circular de transmisiÃ³n
-    uint8_t indexReadTx;                //!< Indice de lectura del buffer circular de transmisiÃ³n
-    uint8_t bufferRx[256];   //!< Buffer circular de recepciÃ³n
-    uint8_t bufferTx[256];   //!< Buffer circular de transmisiÃ³n
-}_sDato ;
+    uint8_t newData;
+    uint8_t indexStart;
+    uint8_t checksumRx;
+    uint8_t indexWriteRx;
+    uint8_t indexReadRx;
+    uint8_t indexWriteTx;
+    uint8_t indexReadTx;
+    uint8_t bufferRx[256];
+    uint8_t bufferTx[256];
+}_sDato;
 
+typedef struct{
+	uint16_t bufADC[64][8];
+	uint16_t dynSumDF[8];
+	//uint32_t sumADC[8];
+	//uint16_t newData[8];
+	uint8_t indexWriteADC;
+	uint8_t indexReadADC;
+}_sADCtype;
+
+typedef struct{
+	uint8_t distanceValues[20];
+	uint8_t distanceInMm;
+	uint16_t distanceMeasured;
+}_sTCRT5000;
+
+typedef union{
+    uint8_t  u8[2];
+    uint16_t u16;
+} _uConvert;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define PRESSED				0
 #define modeIDLE			0
 #define modeONE				1
 #define modeTWO				2
+#define maxMODES			3
 
 #define viaUART				0
 #define viaWIFI				1
 #define viaUSB				2
 
+#define PRESSED				0
 #define NBYTES				4
-#define SIZEBUFADC			48
+#define NUMCHANNELSADC		8
+#define SIZEBUFADC			64
+
+#define SIZEBUFESP01		128
+#define WIFI_SSID			"WiFi Velasco"
+#define WIFI_PASSWORD		"ncgrmvelasco"
+#define WIFI_UDP_REMOTEIP	"192.168.1.18"
+#define WIFI_UDP_REMOTEPORT	30000
+#define WIFI_UDP_LOCALPORT	30000
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -95,23 +124,23 @@ UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
 _sButton myButton;
+_sDato datosComSerie, datosComUSB, datosComWIFI;
+_sADCtype datosADC;
+_sTCRT5000 datosTCRT5000[8];
+_sESP01Handle esp01;
+_uConvert myADCbuf[NUMCHANNELSADC];
 _eProtocolo estadoProtocolo;
-_sDato datosComSerie, datosComUSB;
-
-uint16_t bufADC[SIZEBUFADC][8];
-uint8_t iwBufADC = 0, irBufADC = 0;
 
 uint8_t mode		= 0;
 uint8_t time10ms 	= 40;
 uint8_t	time40ms	= 4;
 uint8_t time100ms	= 10;
 uint8_t time500ms	= 50;
-uint32_t maskIDLE	= 0xF0008000;
+uint32_t maskIDLE	= 0xF0AA8080;
 uint32_t maskONE 	= 0xF0800000;
 uint32_t maskTWO 	= 0xF0A00000;
 uint32_t mask		= 0x80000000;
-uint32_t myHB		= 0x80000000;//0xF088AA00;
-
+uint32_t myHB		= 0xF0008000;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -153,6 +182,14 @@ void handleUSBCommunication();
 void buttonTask(_sButton *button);
 
 void stateTask();
+
+void init_myADC();
+
+void init_myTCRT5000();
+
+void ESP01DoCHPD(uint8_t value);
+
+void ESP01ChangeState(_eESP01STATUS esp01State);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -162,27 +199,34 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	{
 		if (time10ms)
 			time10ms--;
-		HAL_ADC_Start_DMA(&hadc1, (uint32_t *)&bufADC[iwBufADC], 8);
+		HAL_ADC_Start_DMA(&hadc1, (uint32_t *)&datosADC.bufADC[datosADC.indexWriteADC], NUMCHANNELSADC);
 	}
 }
 
+
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
-	iwBufADC++;
-	iwBufADC &= (SIZEBUFADC-1);
+	datosADC.indexWriteADC++;
+	datosADC.indexWriteADC &= (SIZEBUFADC-1);
 }
+
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
 	if (huart->Instance == USART1){
 		datosComSerie.indexWriteRx++;
 		HAL_UART_Receive_IT(&huart1, &datosComSerie.bufferRx[datosComSerie.indexWriteRx], 1);
+
+		datosComWIFI.indexWriteRx++;
+		ESP01_WriteRX(datosComWIFI.bufferRx[datosComWIFI.indexWriteRx]);
 	}
 }
+
 
 void USB_Receive(uint8_t *buf, uint16_t len){
 	memcpy(&datosComUSB.bufferRx[datosComUSB.indexWriteRx], buf, len);
 	datosComUSB.indexWriteRx += len;
 	datosComUSB.newData = true;
 }
+
 
 void heartbeatTask(){
 	if (myHB & mask)
@@ -196,10 +240,12 @@ void heartbeatTask(){
 
 }
 
+
 void do10ms(){
 	// do something
 	time10ms = 40;
 }
+
 
 void do40ms(){
 	if (!time40ms){
@@ -214,9 +260,14 @@ void do40ms(){
 	}
 }
 
+
 void do100ms(){
 	if (!time100ms){
+		stateTask();
 		heartbeatTask();
+		datosComSerie.bufferRx[datosComSerie.indexWriteRx+NBYTES]=ANALOG_IR;
+		datosComSerie.indexStart=datosComSerie.indexWriteRx;
+		decodeData(&datosComSerie);
 		time100ms = 10;
 	}
 	else
@@ -225,11 +276,12 @@ void do100ms(){
 	}
 }
 
+
 void do500ms(){
 	if (!time500ms){
-		datosComSerie.bufferRx[datosComSerie.indexWriteRx+NBYTES]=ALIVE;
-		datosComSerie.indexStart=datosComSerie.indexWriteRx;
-		decodeData(&datosComSerie);
+		datosComWIFI.bufferRx[datosComWIFI.indexWriteRx+NBYTES]=ALIVE;
+		datosComWIFI.indexStart=datosComWIFI.indexWriteRx;
+		decodeData(&datosComWIFI);
 		time500ms = 50;
 	}
 	else
@@ -237,6 +289,7 @@ void do500ms(){
 		time500ms--;
 	}
 }
+
 
 void decodeProtocol(_sDato *datosCom){
     static uint8_t nBytes=0;
@@ -248,7 +301,7 @@ void decodeProtocol(_sDato *datosCom){
             case START:
                 if (datosCom->bufferRx[datosCom->indexReadRx++]=='U'){
                     estadoProtocolo=HEADER_1;
-                    datosCom->cheksumRx=0;
+                    datosCom->checksumRx=0;
                 }
                 break;
             case HEADER_1:
@@ -283,7 +336,7 @@ void decodeProtocol(_sDato *datosCom){
             case TOKEN:
                 if (datosCom->bufferRx[datosCom->indexReadRx++]==':'){
                    estadoProtocolo=PAYLOAD;
-                    datosCom->cheksumRx ='U'^'N'^'E'^'R'^ nBytes^':';
+                    datosCom->checksumRx ='U'^'N'^'E'^'R'^ nBytes^':';
                 }
                 else{
                     datosCom->indexReadRx--;
@@ -292,12 +345,12 @@ void decodeProtocol(_sDato *datosCom){
                 break;
             case PAYLOAD:
                 if (nBytes>1){
-                    datosCom->cheksumRx ^= datosCom->bufferRx[datosCom->indexReadRx++];
+                    datosCom->checksumRx ^= datosCom->bufferRx[datosCom->indexReadRx++];
                 }
                 nBytes--;
                 if(nBytes<=0){
                     estadoProtocolo=START;
-                    if(datosCom->cheksumRx == datosCom->bufferRx[datosCom->indexReadRx]){
+                    if(datosCom->checksumRx == datosCom->bufferRx[datosCom->indexReadRx]){
                         decodeData(datosCom);
                     }
                 }
@@ -308,6 +361,7 @@ void decodeProtocol(_sDato *datosCom){
         }
     }
 }
+
 
 void decodeData(_sDato *datosCom){
     uint8_t auxBuffTx[50], indiceAux=0, checksum;
@@ -331,6 +385,24 @@ void decodeData(_sDato *datosCom){
         	auxBuffTx[indiceAux++] = FIRMWARE;
 			auxBuffTx[NBYTES] = 0x04;
         	break;
+        case ANALOG_IR:
+        	auxBuffTx[indiceAux++] = ANALOG_IR;
+        	for (uint8_t c=0; c<NUMCHANNELSADC; c++)					// For all 8 channels
+			{
+				for (uint8_t i=2; i<SIZEBUFADC; i++)					// Scans 64 bytes of data
+				{
+					datosADC.dynSumDF[c] = 0;							// Clear buffer
+					datosADC.dynSumDF[c] += datosADC.bufADC[i][c];		// Add value "i"
+					datosADC.dynSumDF[c] += datosADC.bufADC[i-1][c];	// Add value "i-1"
+					datosADC.dynSumDF[c] += datosADC.bufADC[i-2][c];	// Add value "i-2"
+					datosADC.bufADC[i][c] = (datosADC.dynSumDF[c]/3);	// Calculates average
+				}
+				myADCbuf[c].u16 = datosADC.bufADC[SIZEBUFADC-1][c];		// Save average value
+				auxBuffTx[indiceAux++] = myADCbuf[c].u8[0];				// Send low byte
+				auxBuffTx[indiceAux++] = myADCbuf[c].u8[1];				// Send high byte
+			}
+			auxBuffTx[NBYTES] = (0x04)+(0x10); 							// Sends 0x04 + 16 BYTES
+			break;
         default:
 			auxBuffTx[indiceAux++] = UNKNOWNCOMMAND;
 			auxBuffTx[NBYTES] = 0x04;
@@ -346,10 +418,25 @@ void decodeData(_sDato *datosCom){
 
 }
 
+
 void communicationTask(_sDato *datosCom, uint8_t source){
 	if (datosCom->indexReadRx != datosCom->indexWriteRx)
 		decodeProtocol(datosCom);
 
+	// FOR USART & WIFI COMMUNICATION
+	if (datosCom->indexReadTx != datosCom->indexWriteTx){
+		if (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_TXE)){
+			USART1->DR = datosCom->bufferTx[datosCom->indexReadTx++];
+		}
+	}
+
+	// FOR USB COMMUNICATION
+	if (datosCom->newData == true){
+		if ((CDC_Transmit_FS(datosComUSB.bufferRx, datosComUSB.indexWriteRx)) == USBD_OK){
+			datosCom->newData = false;
+		}
+	}
+	/*
 	if (source == viaUART){
 		if (datosCom->indexReadTx != datosCom->indexWriteTx){
 			if (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_TXE)){
@@ -364,22 +451,28 @@ void communicationTask(_sDato *datosCom, uint8_t source){
 			}
 		}
 	}
+	*/
 }
+
 
 void buttonTask(_sButton *button){
 	switch (button->estado)
 	{
 		case DOWN:
-			if (button->value == PRESSED)
-				HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 0);	// ON
+			HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 0);	// ON
+			break;
+		case RISING:
+			mode++;
+			if (mode == maxMODES)
+				mode = 0;						// Increase mode (circular: 0-MAX)
 			break;
 		default:
 			break;
 	}
 }
 
-void stateTask()
-{
+
+void stateTask(){
 	switch (mode)
 	{
 		case modeIDLE:
@@ -396,6 +489,35 @@ void stateTask()
 	}
 }
 
+
+void init_myTCRT5000(){
+	uint8_t initialValues[20] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19};
+	for (uint8_t i=0;i<20;i++)
+	{
+		datosTCRT5000[0].distanceValues[i] = initialValues[i];
+	}
+}
+
+void ESP01DoCHPD(uint8_t value){
+	HAL_GPIO_WritePin(CH_EN_GPIO_Port, CH_EN_Pin, value);
+}
+
+void ESP01ChangeState(_eESP01STATUS esp01State){
+	switch((uint32_t)esp01State){
+	case ESP01_WIFI_CONNECTED:
+		myHB = maskIDLE;
+		break;
+	case ESP01_UDPTCP_CONNECTED:
+		myHB = 0xA000A000;
+		break;
+	case ESP01_UDPTCP_DISCONNECTED:
+		myHB = 0xA080A080;
+		break;
+	case ESP01_WIFI_DISCONNECTED:
+		myHB = 0xAAAA0000;
+		break;
+	}
+}
 /* USER CODE END 0 */
 
 /**
@@ -434,12 +556,17 @@ int main(void)
   MX_ADC2_Init();
   MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
-  inicializarBoton(&myButton);
   HAL_TIM_Base_Start_IT(&htim1);
-  HAL_UART_Receive_IT(&huart1, &datosComSerie.bufferRx[datosComSerie.indexWriteRx], 1);
   CDC_AttachRxData(USB_Receive);
-  // START CONVERSION -> CALL EVERY 250 US (fs = 4kHz)
-  HAL_ADC_Start_DMA(&hadc1, (uint32_t *)bufADC, 8);
+  inicializarBoton(&myButton);
+
+  HAL_UART_Receive_IT(&huart1, &datosComSerie.bufferRx[datosComSerie.indexWriteRx], 1);
+  HAL_UART_Receive_IT(&huart1, &datosComWIFI.bufferRx[datosComWIFI.indexWriteRx], 1);
+  HAL_ADC_Start_DMA(&hadc1, (uint32_t *)datosADC.bufADC, NUMCHANNELSADC);
+
+  ESP01_Init(&esp01);
+  ESP01_SetWIFI(WIFI_SSID, WIFI_PASSWORD);
+  ESP01_StartUDP(WIFI_UDP_REMOTEIP, WIFI_UDP_REMOTEPORT, WIFI_UDP_LOCALPORT);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -449,7 +576,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  if (!time10ms)						// Every 10 ms
+	  if (!time10ms)						// Every 10 milliseconds
 	  {
 		  do10ms();
 		  do40ms();
@@ -457,7 +584,9 @@ int main(void)
 		  do500ms();
 	  }
 	  communicationTask(&datosComSerie, viaUART);
+	  communicationTask(&datosComWIFI, viaWIFI);
 	  communicationTask(&datosComUSB, viaUSB);
+	  ESP01_Task();
   }
   /* USER CODE END 3 */
 }
@@ -545,7 +674,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_0;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_13CYCLES_5;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -843,7 +972,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(CHIP_ENABLE_ESP01_GPIO_Port, CHIP_ENABLE_ESP01_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(CH_EN_GPIO_Port, CH_EN_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : LED_Pin */
   GPIO_InitStruct.Pin = LED_Pin;
@@ -864,12 +993,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(SW0_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : CHIP_ENABLE_ESP01_Pin */
-  GPIO_InitStruct.Pin = CHIP_ENABLE_ESP01_Pin;
+  /*Configure GPIO pin : CH_EN_Pin */
+  GPIO_InitStruct.Pin = CH_EN_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(CHIP_ENABLE_ESP01_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(CH_EN_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PB4 PB5 */
   GPIO_InitStruct.Pin = GPIO_PIN_4|GPIO_PIN_5;
