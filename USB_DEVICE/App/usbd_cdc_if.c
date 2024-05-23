@@ -31,6 +31,7 @@
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
+/*
 typedef struct{
     uint8_t timeOut;                    //!< TiemOut para reiniciar la mÃ¡quina si se interrumpe la comunicaciÃ³n
     uint8_t indexStart;                 //!< Indice para saber en que parte del buffer circular arranca el ID
@@ -42,6 +43,7 @@ typedef struct{
     uint8_t bufferRx[256];   //!< Buffer circular de recepciÃ³n
     uint8_t bufferTx[256];   //!< Buffer circular de transmisiÃ³n
 }_sDato ;
+*/
 
 /* USER CODE END PV */
 
@@ -60,8 +62,8 @@ typedef struct{
   */
 
 /* USER CODE BEGIN PRIVATE_TYPES */
-//extern uint8_t rxUSBData[256];
-extern _sDato datosComUSB;
+extern uint8_t rxUSBData[256];
+//extern _sDato datosComUSB;
 /* USER CODE END PRIVATE_TYPES */
 
 /**
@@ -291,9 +293,9 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 	USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
 	USBD_CDC_ReceivePacket(&hUsbDeviceFS);
 
-	memset (datosComUSB.bufferRx, '\0', 256);  // clear the buffer
+	memset (rxUSBData, '\0', 256);  // clear the buffer
 	uint8_t len = (uint8_t)*Len;
-	memcpy(datosComUSB.bufferRx, Buf, len);  // copy the data to the buffer
+	memcpy(rxUSBData, Buf, len);  // copy the data to the buffer
 	memset(Buf, '\0', len);   // clear the Buf also
 
 	return (USBD_OK);

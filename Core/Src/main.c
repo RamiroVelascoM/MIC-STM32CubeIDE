@@ -24,87 +24,102 @@
 /* USER CODE BEGIN Includes */
 #include "usbd_cdc_if.h"
 #include "button.h"
-#include "config.h"
 #include "ESP01.h"
-#include <stdbool.h>
+//#include "MPU6050.h"
+#include "mpu6050.h"
+#include "UNERBUS.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-typedef enum{
-    START,
-    HEADER_1,
-    HEADER_2,
-    HEADER_3,
-    NBYTES,
-    TOKEN,
-    PAYLOAD
-}_eProtocolo;
-
+/**
+ * ENUMERACIONES
+ */
 typedef enum{
     ACKNOWLEDGE = 0x0D,
-	STARTCONFIG = 0xEE,
+	GETLOCALIP = 0xE0,
     ALIVE = 0xF0,
     FIRMWARE = 0xF1,
 	ANALOG_IR = 0xF2,
+	MPU_6050 = 0xA2,//0xF3,
     UNKNOWNCOMMAND = 0xFF
 }_eID;
 
-typedef struct{
-    uint8_t newData;
-    uint8_t indexStart;
-    uint8_t checksumRx;
-    uint8_t indexWriteRx;
-    uint8_t indexReadRx;
-    uint8_t indexWriteTx;
-    uint8_t indexReadTx;
-    uint8_t bufferRx[256];
-    uint8_t bufferTx[256];
-}_sDato;
+/**
+ * UNIONES
+ */
+typedef union{
+	struct{
+		uint8_t	b0:	1;
+		uint8_t	b1:	1;
+		uint8_t	b2:	1;
+		uint8_t	b3:	1;
+		uint8_t	b4:	1;
+		uint8_t	b5:	1;
+		uint8_t	b6:	1;
+		uint8_t	b7:	1;
+	} bit;
+	uint8_t byte;
+} _uFlag;
 
+typedef union{
+	uint8_t		u8[4];
+	int8_t		i8[4];
+	uint16_t	u16[2];
+	int16_t		i16[2];
+	uint32_t	u32;
+	int32_t		i32;
+} _uWork;
+
+/**
+ * ESTRUCTURAS
+ */
 typedef struct{
-	uint16_t bufADC[64][8];
-	uint16_t dynSumDF[8];
-	//uint32_t sumADC[8];
-	//uint16_t newData[8];
-	uint8_t indexWriteADC;
-	uint8_t indexReadADC;
-}_sADCtype;
+	uint8_t index[8];
+	uint16_t data[8];
+	uint16_t value[8];
+	uint16_t buf[8][64];
+	uint32_t sum[8];
+}_sADC;
 
 typedef struct{
 	uint8_t distanceValues[20];
 	uint8_t distanceInMm;
 	uint16_t distanceMeasured;
 }_sTCRT5000;
-
-typedef union{
-    uint8_t  u8[2];
-    uint16_t u16;
-} _uConvert;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define modeIDLE			0
-#define modeONE				1
-#define modeTWO				2
-#define maxMODES			3
+#define modeIDLE				0
+#define modeONE					1
+#define modeTWO					2
+#define maxMODES				3
 
-#define viaUART				0
-#define viaWIFI				1
-#define viaUSB				2
+#define PRESSED					0
+#define NUMCHANNELSADC			8
+#define TIMEOUT_BUTTON			4
+#define TIMEOUT_ALIVE			50
 
-#define PRESSED				0
-#define NBYTES				4
-#define NUMCHANNELSADC		8
-#define SIZEBUFADC			64
+#define SIZEBUFADC				64
+#define SIZEBUFRXPC				128
+#define SIZEBUFTXPC				256
+#define SIZEBUFRXESP01			128
+#define SIZEBUFTXESP01			128
 
-#define SIZEBUFESP01		128
-#define WIFI_SSID			"WiFi Velasco"
-#define WIFI_PASSWORD		"ncgrmvelasco"
-#define WIFI_UDP_REMOTEIP	"192.168.1.18"
-#define WIFI_UDP_REMOTEPORT	30000
-#define WIFI_UDP_LOCALPORT	30000
+#define HEARTBEAT_MASK			0x80000000
+#define	HEARTBEAT_IDLE			0xF0A0F000
+#define	HEARTBEAT_WIFI_READY	0xF0A0A0A0
+#define	HEARTBEAT_UDP_READY		0xF0AAF0AA
+
+#define WIFI_SSID				"WiFi Velasco Fibertel"
+#define WIFI_PASSWORD			"ncgrmvelasco"
+#define WIFI_UDP_REMOTE_IP		"192.168.1.8"		//La IP de la PC
+#define WIFI_UDP_LOCAL_PORT		30000
+#define WIFI_UDP_REMOTE_PORT	30000				//El puerto UDP en la PC
+
+#define ON10MS					flag1.bit.b0
+#define MPU_DATAREADY			flag1.bit.b1
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -117,30 +132,58 @@ ADC_HandleTypeDef hadc1;
 ADC_HandleTypeDef hadc2;
 DMA_HandleTypeDef hdma_adc1;
 
+I2C_HandleTypeDef hi2c2;
+
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim4;
 
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
-_sButton myButton;
-_sDato datosComSerie, datosComUSB, datosComWIFI;
-_sADCtype datosADC;
-_sTCRT5000 datosTCRT5000[8];
-_sESP01Handle esp01;
-_uConvert myADCbuf[NUMCHANNELSADC];
-_eProtocolo estadoProtocolo;
+/**
+ * DEFINICION DE UNIONES
+ */
+_uFlag flag1;
+_uWork w;
 
-uint8_t mode		= 0;
-uint8_t time10ms 	= 40;
-uint8_t	time40ms	= 4;
-uint8_t time100ms	= 10;
-uint8_t time500ms	= 50;
-uint32_t maskIDLE	= 0xF0AA8080;
-uint32_t maskONE 	= 0xF0800000;
-uint32_t maskTWO 	= 0xF0A00000;
-uint32_t mask		= 0x80000000;
-uint32_t myHB		= 0xF0008000;
+/**
+ * DEFINICION DE ESTRUCTURAS
+ */
+_sESP01Handle esp01;
+_sUNERBUSHandle unerbusPC;
+_sUNERBUSHandle unerbusESP01;
+_sADC myADC;
+_sTCRT5000 myTCRT5000[NUMCHANNELSADC];
+_sButton myButton;
+_sMPUData myMPU;
+
+/**
+ * DEFINICION DE DATOS DE COMUNICACION
+ */
+uint8_t bufRXPC[SIZEBUFRXPC], bufTXPC[SIZEBUFTXPC];
+uint8_t bufRXESP01[SIZEBUFRXESP01], bufTXESP01[SIZEBUFTXESP01], dataRXESP01;
+uint8_t rxUSBData, newData;
+
+/**
+ * DEFINICION DE LAS VARIABLES UTILIZADAS PARA EL ADC
+ */
+uint8_t indexADC[NUMCHANNELSADC];
+uint16_t dataADC[NUMCHANNELSADC];
+uint16_t valueADC[NUMCHANNELSADC];
+uint16_t bufADC[NUMCHANNELSADC][SIZEBUFADC];
+uint32_t sumADC[NUMCHANNELSADC];
+
+/**
+ * DEFINICION DE DATOS DE MANEJO DE PROGRAMA
+ */
+uint8_t mode			= 0;
+uint8_t time10ms 		= 40;
+uint8_t time100ms		= 10;
+uint8_t	timeOutButton	= TIMEOUT_BUTTON;
+uint8_t timeOutAlive 	= TIMEOUT_ALIVE;
+uint32_t myHB			= HEARTBEAT_IDLE;
+uint32_t maskHB			= HEARTBEAT_MASK;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -152,312 +195,195 @@ static void MX_USART1_UART_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_ADC2_Init(void);
 static void MX_TIM4_Init(void);
+static void MX_I2C2_Init(void);
 /* USER CODE BEGIN PFP */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim);
+void ESP01DoCHPD(uint8_t value);
 
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart);
+int ESP01WriteUSARTByte(uint8_t value);
 
-void USB_Receive(uint8_t *buf, uint16_t len);
+void ESP01WriteByteToBufRX(uint8_t value);
 
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc);
+void ESP01ChangeState(_eESP01STATUS esp01State);
 
-void heartbeatTask();
+void DecodeCMD(struct UNERBUSHandle *aBus, uint8_t iStartData);
 
-void do10ms();
+void Do10ms();
 
-void do40ms();
-
-void do100ms();
-
-void do500ms();
-
-void decodeProtocol(_sDato *datosCom);
-
-void decodeData(_sDato *);
-
-void communicationTask(_sDato *datosCom, uint8_t source);
-
-void handleUSBCommunication();
+void USBReceive(uint8_t *buf, uint16_t len);
 
 void buttonTask(_sButton *button);
 
-void stateTask();
+void communicationTask();
 
-void init_myADC();
-
-void init_myTCRT5000();
-
-void ESP01DoCHPD(uint8_t value);
-
-void ESP01ChangeState(_eESP01STATUS esp01State);
+void inicializarIRs();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+//CALLBACKS
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
-	if (htim->Instance == TIM1)
-	{
-		if (time10ms)
-			time10ms--;
-		HAL_ADC_Start_DMA(&hadc1, (uint32_t *)&datosADC.bufADC[datosADC.indexWriteADC], NUMCHANNELSADC);
+	if(htim->Instance == TIM1){
+		time10ms--;
+		if(!time10ms){
+			ON10MS = 1;
+			time10ms = 40;
+		}
+		HAL_ADC_Start_DMA(&hadc1, (uint32_t *)&myADC.data, NUMCHANNELSADC);
 	}
 }
 
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
-	datosADC.indexWriteADC++;
-	datosADC.indexWriteADC &= (SIZEBUFADC-1);
+	for (uint8_t c=0; c<NUMCHANNELSADC; c++)
+	{
+		myADC.sum[c] -= myADC.buf[c][myADC.index[c]];
+		myADC.sum[c] += myADC.data[c];
+		myADC.buf[c][myADC.index[c]] = myADC.data[c];
+		myADC.value[c] = myADC.sum[c]/SIZEBUFADC;
+		myADC.index[c]++;
+		myADC.index[c] &= (SIZEBUFADC-1);
+	}
 }
-
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
-	if (huart->Instance == USART1){
-		datosComSerie.indexWriteRx++;
-		HAL_UART_Receive_IT(&huart1, &datosComSerie.bufferRx[datosComSerie.indexWriteRx], 1);
+	if(huart->Instance == USART1){
+		ESP01_WriteRX(dataRXESP01);
+		HAL_UART_Receive_IT(&huart1, &dataRXESP01, 1);
+	}
+}
+//.
 
-		datosComWIFI.indexWriteRx++;
-		ESP01_WriteRX(datosComWIFI.bufferRx[datosComWIFI.indexWriteRx]);
+void ESP01DoCHPD(uint8_t value){
+	HAL_GPIO_WritePin(CH_EN_GPIO_Port, CH_EN_Pin, value);
+}
+
+int ESP01WriteUSARTByte(uint8_t value){
+	if(__HAL_UART_GET_FLAG(&huart1, USART_SR_TXE)){
+		USART1->DR = value;
+		return 1;
+	}
+	return 0;
+}
+
+void ESP01WriteByteToBufRX(uint8_t value){
+	UNERBUS_ReceiveByte(&unerbusESP01, value);
+}
+
+void ESP01ChangeState(_eESP01STATUS esp01State){
+	switch((uint32_t)esp01State){
+	case ESP01_WIFI_CONNECTED:
+		myHB = HEARTBEAT_WIFI_READY;
+		break;
+	case ESP01_UDPTCP_CONNECTED:
+		myHB = HEARTBEAT_UDP_READY;
+		break;
+	case ESP01_UDPTCP_DISCONNECTED:
+		myHB = HEARTBEAT_WIFI_READY;
+		break;
+	case ESP01_WIFI_DISCONNECTED:
+		myHB = HEARTBEAT_IDLE;
+		break;
 	}
 }
 
 
-void USB_Receive(uint8_t *buf, uint16_t len){
-	memcpy(&datosComUSB.bufferRx[datosComUSB.indexWriteRx], buf, len);
-	datosComUSB.indexWriteRx += len;
-	datosComUSB.newData = true;
-}
+void DecodeCMD(struct UNERBUSHandle *aBus, uint8_t iStartData){
+	uint8_t id;
+	uint8_t length = 0;
 
-
-void heartbeatTask(){
-	if (myHB & mask)
-		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 0);	// ON
-	else
-		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 1);	// OFF
-
-	mask >>= 1;									// Displace hbMask one place to the right
-	if (!mask)
-		mask = 0x80000000;						// If there's a 0 in that place, changes the actual positions to compare the right way
-
-}
-
-
-void do10ms(){
-	// do something
-	time10ms = 40;
-}
-
-
-void do40ms(){
-	if (!time40ms){
-		myButton.value = HAL_GPIO_ReadPin(SW0_GPIO_Port, SW0_Pin);
-		checkMEF(&myButton);
-		buttonTask(&myButton);
-		time40ms = 4;
-	}
-	else
-	{
-		time40ms--;
-	}
-}
-
-
-void do100ms(){
-	if (!time100ms){
-		stateTask();
-		heartbeatTask();
-		datosComSerie.bufferRx[datosComSerie.indexWriteRx+NBYTES]=ANALOG_IR;
-		datosComSerie.indexStart=datosComSerie.indexWriteRx;
-		decodeData(&datosComSerie);
-		time100ms = 10;
-	}
-	else
-	{
-		time100ms--;
-	}
-}
-
-
-void do500ms(){
-	if (!time500ms){
-		datosComWIFI.bufferRx[datosComWIFI.indexWriteRx+NBYTES]=ALIVE;
-		datosComWIFI.indexStart=datosComWIFI.indexWriteRx;
-		decodeData(&datosComWIFI);
-		time500ms = 50;
-	}
-	else
-	{
-		time500ms--;
-	}
-}
-
-
-void decodeProtocol(_sDato *datosCom){
-    static uint8_t nBytes=0;
-    uint8_t indexWriteRxCopy=datosCom->indexWriteRx;
-
-    while (datosCom->indexReadRx!=indexWriteRxCopy)
-    {
-        switch (estadoProtocolo) {
-            case START:
-                if (datosCom->bufferRx[datosCom->indexReadRx++]=='U'){
-                    estadoProtocolo=HEADER_1;
-                    datosCom->checksumRx=0;
-                }
-                break;
-            case HEADER_1:
-                if (datosCom->bufferRx[datosCom->indexReadRx++]=='N')
-                   estadoProtocolo=HEADER_2;
-                else{
-                    datosCom->indexReadRx--;
-                    estadoProtocolo=START;
-                }
-                break;
-            case HEADER_2:
-                if (datosCom->bufferRx[datosCom->indexReadRx++]=='E')
-                    estadoProtocolo=HEADER_3;
-                else{
-                    datosCom->indexReadRx--;
-                   estadoProtocolo=START;
-                }
-                break;
-        case HEADER_3:
-            if (datosCom->bufferRx[datosCom->indexReadRx++]=='R')
-                estadoProtocolo=NBYTES;
-            else{
-                datosCom->indexReadRx--;
-                estadoProtocolo=START;
-            }
-            break;
-            case NBYTES:
-                datosCom->indexStart=datosCom->indexReadRx;
-                nBytes=datosCom->bufferRx[datosCom->indexReadRx++];
-                estadoProtocolo=TOKEN;
-                break;
-            case TOKEN:
-                if (datosCom->bufferRx[datosCom->indexReadRx++]==':'){
-                   estadoProtocolo=PAYLOAD;
-                    datosCom->checksumRx ='U'^'N'^'E'^'R'^ nBytes^':';
-                }
-                else{
-                    datosCom->indexReadRx--;
-                    estadoProtocolo=START;
-                }
-                break;
-            case PAYLOAD:
-                if (nBytes>1){
-                    datosCom->checksumRx ^= datosCom->bufferRx[datosCom->indexReadRx++];
-                }
-                nBytes--;
-                if(nBytes<=0){
-                    estadoProtocolo=START;
-                    if(datosCom->checksumRx == datosCom->bufferRx[datosCom->indexReadRx]){
-                        decodeData(datosCom);
-                    }
-                }
-                break;
-            default:
-                estadoProtocolo=START;
-                break;
-        }
-    }
-}
-
-
-void decodeData(_sDato *datosCom){
-    uint8_t auxBuffTx[50], indiceAux=0, checksum;
-
-    auxBuffTx[indiceAux++]='U';
-    auxBuffTx[indiceAux++]='N';
-    auxBuffTx[indiceAux++]='E';
-    auxBuffTx[indiceAux++]='R';
-    auxBuffTx[indiceAux++]=0;
-    auxBuffTx[indiceAux++]=':';
-    auxBuffTx[indiceAux++]='9';
-    auxBuffTx[indiceAux++]='7';
-
-    switch (datosCom->bufferRx[datosCom->indexStart+NBYTES]) {
-        case ALIVE:
-            auxBuffTx[indiceAux++] = ALIVE;
-            auxBuffTx[indiceAux++] = ACKNOWLEDGE;
-            auxBuffTx[NBYTES] = 0x05;
-            break;
-        case FIRMWARE:
-        	auxBuffTx[indiceAux++] = FIRMWARE;
-			auxBuffTx[NBYTES] = 0x04;
-        	break;
-        case ANALOG_IR:
-        	auxBuffTx[indiceAux++] = ANALOG_IR;
-        	for (uint8_t c=0; c<NUMCHANNELSADC; c++)					// For all 8 channels
+	id = UNERBUS_GetUInt8(aBus);
+	switch(id){
+		case GETLOCALIP:
+			UNERBUS_Write(aBus, (uint8_t *)ESP01_GetLocalIP(), 16);
+			length = 17;
+			break;
+		case ALIVE:
+			UNERBUS_WriteByte(aBus, 0x0D);
+			length = 2;
+			break;
+		case ANALOG_IR:
+			for (uint8_t c=0; c<NUMCHANNELSADC; c++)
 			{
-				for (uint8_t i=2; i<SIZEBUFADC; i++)					// Scans 64 bytes of data
-				{
-					datosADC.dynSumDF[c] = 0;							// Clear buffer
-					datosADC.dynSumDF[c] += datosADC.bufADC[i][c];		// Add value "i"
-					datosADC.dynSumDF[c] += datosADC.bufADC[i-1][c];	// Add value "i-1"
-					datosADC.dynSumDF[c] += datosADC.bufADC[i-2][c];	// Add value "i-2"
-					datosADC.bufADC[i][c] = (datosADC.dynSumDF[c]/3);	// Calculates average
-				}
-				myADCbuf[c].u16 = datosADC.bufADC[SIZEBUFADC-1][c];		// Save average value
-				auxBuffTx[indiceAux++] = myADCbuf[c].u8[0];				// Send low byte
-				auxBuffTx[indiceAux++] = myADCbuf[c].u8[1];				// Send high byte
+				w.u32 = myADC.value[c];
+				UNERBUS_WriteByte(aBus, w.u8[0]);
+				UNERBUS_WriteByte(aBus, w.u8[1]);
 			}
-			auxBuffTx[NBYTES] = (0x04)+(0x10); 							// Sends 0x04 + 16 BYTES
+			length = 17;
 			break;
-        default:
-			auxBuffTx[indiceAux++] = UNKNOWNCOMMAND;
-			auxBuffTx[NBYTES] = 0x04;
+		case MPU_6050:
+			w.u16[0] = (uint16_t)myMPU.Ax;
+			UNERBUS_WriteByte(aBus, w.u8[1]);
+			UNERBUS_WriteByte(aBus, w.u8[0]);
+			w.u16[0] = (uint16_t)myMPU.Ay;
+			UNERBUS_WriteByte(aBus, w.u8[1]);
+			UNERBUS_WriteByte(aBus, w.u8[0]);
+			w.u16[0] = (uint16_t)myMPU.Az;
+			UNERBUS_WriteByte(aBus, w.u8[1]);
+			UNERBUS_WriteByte(aBus, w.u8[0]);
+			w.u16[0] = (uint16_t)myMPU.Gx;
+			UNERBUS_WriteByte(aBus, w.u8[1]);
+			UNERBUS_WriteByte(aBus, w.u8[0]);
+			w.u16[0] = (uint16_t)myMPU.Gy;
+			UNERBUS_WriteByte(aBus, w.u8[1]);
+			UNERBUS_WriteByte(aBus, w.u8[0]);
+			w.u16[0] = (uint16_t)myMPU.Gz;
+			UNERBUS_WriteByte(aBus, w.u8[1]);
+			UNERBUS_WriteByte(aBus, w.u8[0]);
+			length = 13;
+			break;
+		default:
 			break;
 	}
-    checksum = 0;
-	for(uint8_t a=0; a<indiceAux; a++)
-	{
-		checksum ^= auxBuffTx[a];
-		datosCom->bufferTx[datosCom->indexWriteTx++] = auxBuffTx[a];
-	}
-	datosCom->bufferTx[datosCom->indexWriteTx++] = checksum;
 
+	if(length){
+		UNERBUS_Send(aBus, id, length);
+	}
+}
+
+void Do10ms(){
+	ON10MS = 0;
+
+	if(time100ms)
+		time100ms--;
+
+	ESP01_Timeout10ms();
+	UNERBUS_Timeout(&unerbusESP01);
+	UNERBUS_Timeout(&unerbusPC);
+}
+
+void Do100ms(){
+	time100ms = 10;
+
+	if(maskHB & myHB)
+		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 0); // ON
+	else
+		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 1); // OFF
+
+	maskHB >>= 1;
+	if(!maskHB)
+		maskHB = 0x80000000;
+
+	if(timeOutAlive)
+		timeOutAlive--;
+
+	if (timeOutButton)
+		timeOutButton--;
+
+	MPU6050_Read_All(&hi2c2, &myMPU);
 }
 
 
-void communicationTask(_sDato *datosCom, uint8_t source){
-	if (datosCom->indexReadRx != datosCom->indexWriteRx)
-		decodeProtocol(datosCom);
-
-	// FOR USART & WIFI COMMUNICATION
-	if (datosCom->indexReadTx != datosCom->indexWriteTx){
-		if (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_TXE)){
-			USART1->DR = datosCom->bufferTx[datosCom->indexReadTx++];
-		}
-	}
-
-	// FOR USB COMMUNICATION
-	if (datosCom->newData == true){
-		if ((CDC_Transmit_FS(datosComUSB.bufferRx, datosComUSB.indexWriteRx)) == USBD_OK){
-			datosCom->newData = false;
-		}
-	}
-	/*
-	if (source == viaUART){
-		if (datosCom->indexReadTx != datosCom->indexWriteTx){
-			if (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_TXE)){
-				USART1->DR = datosCom->bufferTx[datosCom->indexReadTx++];
-			}
-		}
-	}
-	else if (source == viaUSB){
-		if (datosCom->newData == true){
-			if ((CDC_Transmit_FS(datosComUSB.bufferRx, datosComUSB.indexWriteRx)) == USBD_OK){
-				datosCom->newData = false;
-			}
-		}
-	}
-	*/
+void USBReceive(uint8_t *buf, uint16_t len){
+	UNERBUS_ReceiveBuf(&unerbusPC, buf, len);
 }
-
 
 void buttonTask(_sButton *button){
-	switch (button->estado)
-	{
+	timeOutButton = TIMEOUT_BUTTON;
+
+	myButton.value = HAL_GPIO_ReadPin(SW0_GPIO_Port, SW0_Pin);
+	checkMEF(&myButton);
+
+	switch (button->estado){
 		case DOWN:
 			HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 0);	// ON
 			break;
@@ -471,53 +397,35 @@ void buttonTask(_sButton *button){
 	}
 }
 
+void communicationTask(){
+	if(unerbusESP01.tx.iRead != unerbusESP01.tx.iWrite){
+		w.u8[0] = unerbusESP01.tx.iWrite - unerbusESP01.tx.iRead;
+		w.u8[0] &= unerbusESP01.tx.maxIndexRingBuf;
+		if(ESP01_Send(unerbusESP01.tx.buf, unerbusESP01.tx.iRead, w.u8[0], unerbusESP01.tx.maxIndexRingBuf+1) == ESP01_SEND_READY)
+			unerbusESP01.tx.iRead = unerbusESP01.tx.iWrite;
+	}
 
-void stateTask(){
-	switch (mode)
-	{
-		case modeIDLE:
-			myHB = maskIDLE;
-			break;
-		case modeONE:
-			myHB = maskONE;
-			break;
-		case modeTWO:
-			myHB = maskTWO;
-			break;
-		default:
-			break;
+	if(unerbusPC.tx.iRead != unerbusPC.tx.iWrite){
+		if(unerbusPC.tx.iRead < unerbusPC.tx.iWrite)
+			w.u8[0] = unerbusPC.tx.iWrite - unerbusPC.tx.iRead;
+		else
+			w.u8[0] = unerbusPC.tx.maxIndexRingBuf+1 - unerbusPC.tx.iRead;
+
+		if(CDC_Transmit_FS(&unerbusPC.tx.buf[unerbusPC.tx.iRead], w.u8[0]) == USBD_OK){
+			unerbusPC.tx.iRead += w.u8[0];
+			unerbusPC.tx.iRead &= unerbusPC.tx.maxIndexRingBuf;
+		}
 	}
 }
 
-
-void init_myTCRT5000(){
+void inicializarIRs(){
 	uint8_t initialValues[20] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19};
 	for (uint8_t i=0;i<20;i++)
 	{
-		datosTCRT5000[0].distanceValues[i] = initialValues[i];
+		myTCRT5000[0].distanceValues[i] = initialValues[i];
 	}
 }
 
-void ESP01DoCHPD(uint8_t value){
-	HAL_GPIO_WritePin(CH_EN_GPIO_Port, CH_EN_Pin, value);
-}
-
-void ESP01ChangeState(_eESP01STATUS esp01State){
-	switch((uint32_t)esp01State){
-	case ESP01_WIFI_CONNECTED:
-		myHB = maskIDLE;
-		break;
-	case ESP01_UDPTCP_CONNECTED:
-		myHB = 0xA000A000;
-		break;
-	case ESP01_UDPTCP_DISCONNECTED:
-		myHB = 0xA080A080;
-		break;
-	case ESP01_WIFI_DISCONNECTED:
-		myHB = 0xAAAA0000;
-		break;
-	}
-}
 /* USER CODE END 0 */
 
 /**
@@ -536,7 +444,50 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
+  /**
+   * INITIALIZE ADC DATA
+   */
+  //myADC.indexWrite = 0;
+  //myADC.indexRead = 0;
 
+  /**
+   * INITIALIZE ESP01 HANDLE DATA
+   */
+  esp01.DoCHPD = ESP01DoCHPD;
+  esp01.WriteByteToBufRX = ESP01WriteByteToBufRX;
+  esp01.WriteUSARTByte = ESP01WriteUSARTByte;
+  ESP01_Init(&esp01);
+  ESP01_AttachChangeState(ESP01ChangeState);
+  ESP01_SetWIFI(WIFI_SSID, WIFI_PASSWORD);
+  ESP01_StartUDP(WIFI_UDP_REMOTE_IP, WIFI_UDP_REMOTE_PORT, WIFI_UDP_LOCAL_PORT);
+
+  /**
+   * INITIALIZE UNERBUS ESP01
+   */
+  unerbusESP01.MyDataReady = DecodeCMD;
+  unerbusESP01.WriteUSARTByte = NULL;
+  unerbusESP01.rx.buf = bufRXESP01;
+  unerbusESP01.rx.maxIndexRingBuf = (SIZEBUFRXESP01 - 1);
+  unerbusESP01.tx.buf = bufTXESP01;
+  unerbusESP01.tx.maxIndexRingBuf = (SIZEBUFTXESP01 - 1);
+  UNERBUS_Init(&unerbusESP01);
+
+  /**
+   * INITIALIZE UNERBUS PC
+   */
+  unerbusPC.MyDataReady = DecodeCMD;
+  unerbusPC.WriteUSARTByte = NULL;
+  unerbusPC.rx.buf = bufRXPC;
+  unerbusPC.rx.maxIndexRingBuf = (SIZEBUFRXPC - 1);
+  unerbusPC.tx.buf = bufTXPC;
+  unerbusPC.tx.maxIndexRingBuf = (SIZEBUFTXPC - 1);
+  UNERBUS_Init(&unerbusPC);
+
+  /**
+   * INITIALIZATION OF OTHER FUNCTIONS
+   */
+  inicializarBoton(&myButton);
+  inicializarIRs();
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -555,18 +506,15 @@ int main(void)
   MX_ADC1_Init();
   MX_ADC2_Init();
   MX_TIM4_Init();
+  MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
+  CDC_AttachRxData(USBReceive);
+
+  HAL_UART_Receive_IT(&huart1, &dataRXESP01, 1);
+
   HAL_TIM_Base_Start_IT(&htim1);
-  CDC_AttachRxData(USB_Receive);
-  inicializarBoton(&myButton);
 
-  HAL_UART_Receive_IT(&huart1, &datosComSerie.bufferRx[datosComSerie.indexWriteRx], 1);
-  HAL_UART_Receive_IT(&huart1, &datosComWIFI.bufferRx[datosComWIFI.indexWriteRx], 1);
-  HAL_ADC_Start_DMA(&hadc1, (uint32_t *)datosADC.bufADC, NUMCHANNELSADC);
-
-  ESP01_Init(&esp01);
-  ESP01_SetWIFI(WIFI_SSID, WIFI_PASSWORD);
-  ESP01_StartUDP(WIFI_UDP_REMOTEIP, WIFI_UDP_REMOTEPORT, WIFI_UDP_LOCALPORT);
+  MPU6050_Init(&hi2c2);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -576,17 +524,29 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  if (!time10ms)						// Every 10 milliseconds
-	  {
-		  do10ms();
-		  do40ms();
-		  do100ms();
-		  do500ms();
+	  if (!timeOutAlive){
+		  UNERBUS_WriteByte(&unerbusESP01, ACKNOWLEDGE);
+		  UNERBUS_Send(&unerbusESP01, ALIVE, 2);
+		  timeOutAlive = TIMEOUT_ALIVE;
 	  }
-	  communicationTask(&datosComSerie, viaUART);
-	  communicationTask(&datosComWIFI, viaWIFI);
-	  communicationTask(&datosComUSB, viaUSB);
+
+	  if (!timeOutButton)
+		  buttonTask(&myButton);
+
+	  if (!time100ms)
+		  Do100ms();
+
+	  if (ON10MS)
+		  Do10ms();
+
+	  communicationTask();
+
 	  ESP01_Task();
+
+	  UNERBUS_Task(&unerbusESP01);
+
+	  UNERBUS_Task(&unerbusPC);
+
   }
   /* USER CODE END 3 */
 }
@@ -796,6 +756,40 @@ static void MX_ADC2_Init(void)
 }
 
 /**
+  * @brief I2C2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C2_Init(void)
+{
+
+  /* USER CODE BEGIN I2C2_Init 0 */
+
+  /* USER CODE END I2C2_Init 0 */
+
+  /* USER CODE BEGIN I2C2_Init 1 */
+
+  /* USER CODE END I2C2_Init 1 */
+  hi2c2.Instance = I2C2;
+  hi2c2.Init.ClockSpeed = 100000;
+  hi2c2.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c2.Init.OwnAddress1 = 0;
+  hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c2.Init.OwnAddress2 = 0;
+  hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C2_Init 2 */
+
+  /* USER CODE END I2C2_Init 2 */
+
+}
+
+/**
   * @brief TIM1 Initialization Function
   * @param None
   * @retval None
@@ -980,12 +974,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LED_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PB10 PB11 */
-  GPIO_InitStruct.Pin = GPIO_PIN_10|GPIO_PIN_11;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pin : SW0_Pin */
   GPIO_InitStruct.Pin = SW0_Pin;
