@@ -25,8 +25,7 @@
 #include "usbd_cdc_if.h"
 #include "button.h"
 #include "ESP01.h"
-//#include "MPU6050.h"
-#include "mpu6050.h"
+#include "MPU6050.h"
 #include "UNERBUS.h"
 /* USER CODE END Includes */
 
@@ -41,7 +40,7 @@ typedef enum{
     ALIVE = 0xF0,
     FIRMWARE = 0xF1,
 	ANALOG_IR = 0xF2,
-	MPU_6050 = 0xA2,//0xF3,
+	MPU_6050 = 0xF3,
     UNKNOWNCOMMAND = 0xFF
 }_eID;
 
@@ -133,6 +132,7 @@ ADC_HandleTypeDef hadc2;
 DMA_HandleTypeDef hdma_adc1;
 
 I2C_HandleTypeDef hi2c2;
+DMA_HandleTypeDef hdma_i2c2_rx;
 
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim4;
@@ -155,7 +155,7 @@ _sUNERBUSHandle unerbusESP01;
 _sADC myADC;
 _sTCRT5000 myTCRT5000[NUMCHANNELSADC];
 _sButton myButton;
-_sMPUData myMPU;
+_sMPUData mpuValues;
 
 /**
  * DEFINICION DE DATOS DE COMUNICACION
@@ -251,6 +251,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
 		HAL_UART_Receive_IT(&huart1, &dataRXESP01, 1);
 	}
 }
+
 //.
 
 void ESP01DoCHPD(uint8_t value){
@@ -311,24 +312,7 @@ void DecodeCMD(struct UNERBUSHandle *aBus, uint8_t iStartData){
 			length = 17;
 			break;
 		case MPU_6050:
-			w.u16[0] = (uint16_t)myMPU.Ax;
-			UNERBUS_WriteByte(aBus, w.u8[1]);
-			UNERBUS_WriteByte(aBus, w.u8[0]);
-			w.u16[0] = (uint16_t)myMPU.Ay;
-			UNERBUS_WriteByte(aBus, w.u8[1]);
-			UNERBUS_WriteByte(aBus, w.u8[0]);
-			w.u16[0] = (uint16_t)myMPU.Az;
-			UNERBUS_WriteByte(aBus, w.u8[1]);
-			UNERBUS_WriteByte(aBus, w.u8[0]);
-			w.u16[0] = (uint16_t)myMPU.Gx;
-			UNERBUS_WriteByte(aBus, w.u8[1]);
-			UNERBUS_WriteByte(aBus, w.u8[0]);
-			w.u16[0] = (uint16_t)myMPU.Gy;
-			UNERBUS_WriteByte(aBus, w.u8[1]);
-			UNERBUS_WriteByte(aBus, w.u8[0]);
-			w.u16[0] = (uint16_t)myMPU.Gz;
-			UNERBUS_WriteByte(aBus, w.u8[1]);
-			UNERBUS_WriteByte(aBus, w.u8[0]);
+			UNERBUS_Write(aBus, mpuValues.buffer, 12);
 			length = 13;
 			break;
 		default:
@@ -361,7 +345,7 @@ void Do100ms(){
 
 	maskHB >>= 1;
 	if(!maskHB)
-		maskHB = 0x80000000;
+		maskHB = HEARTBEAT_MASK;
 
 	if(timeOutAlive)
 		timeOutAlive--;
@@ -369,7 +353,7 @@ void Do100ms(){
 	if (timeOutButton)
 		timeOutButton--;
 
-	MPU6050_Read_All(&hi2c2, &myMPU);
+	 MPU6050_Read_Data_DMA(&hi2c2);
 }
 
 
@@ -444,11 +428,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  /**
-   * INITIALIZE ADC DATA
-   */
-  //myADC.indexWrite = 0;
-  //myADC.indexRead = 0;
+  HAL_Delay(MPU_TIMEOUT);
 
   /**
    * INITIALIZE ESP01 HANDLE DATA
@@ -527,6 +507,8 @@ int main(void)
 	  if (!timeOutAlive){
 		  UNERBUS_WriteByte(&unerbusESP01, ACKNOWLEDGE);
 		  UNERBUS_Send(&unerbusESP01, ALIVE, 2);
+		  UNERBUS_WriteByte(&unerbusPC, ACKNOWLEDGE);
+		  UNERBUS_Send(&unerbusPC, ALIVE, 2);
 		  timeOutAlive = TIMEOUT_ALIVE;
 	  }
 
@@ -942,6 +924,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel1_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
+  /* DMA1_Channel5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel5_IRQn);
 
 }
 
