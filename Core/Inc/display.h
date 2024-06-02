@@ -62,12 +62,21 @@ typedef struct {
  * FUNCTION DEFINITIONS
  */
 uint8_t Display_Init(I2C_HandleTypeDef *hi2c);
+
 uint8_t Display_UpdateScreen(I2C_HandleTypeDef *hi2c);
+
 void Display_Fill(Display_COLOR color);
+
 void Display_DrawPixel(uint8_t x, uint8_t y, Display_COLOR color);
+
 char Display_WriteChar(char ch, FontDef Font, Display_COLOR color);
+
 char Display_WriteString(const char* str, FontDef Font, Display_COLOR color);
+
 void Display_SetCursor(uint8_t x, uint8_t y);
+
 void Display_InvertColors(void);
+
+void Display_DrawBitmap(uint8_t W, uint8_t H, const uint8_t* pBMP);
 
 #endif  // _display_H
