@@ -27,6 +27,11 @@
 #include "ESP01.h"
 #include "MPU6050.h"
 #include "UNERBUS.h"
+#include "display.h"
+#include "fonts.h"
+#include <stdbool.h>
+// #include "stm32f1xx_hal_flash.h"
+// #include "stm32f1xx_hal_flash_ex.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -41,6 +46,7 @@ typedef enum{
     FIRMWARE = 0xF1,
 	ANALOG_IR = 0xF2,
 	MPU_6050 = 0xF3,
+	DISPLAY_SSD1306 = 0xF4,
     UNKNOWNCOMMAND = 0xFF
 }_eID;
 
@@ -95,6 +101,8 @@ typedef struct{
 #define modeTWO					2
 #define maxMODES				3
 
+#define OFF						0
+#define ON						1
 #define PRESSED					0
 #define NUMCHANNELSADC			8
 #define TIMEOUT_BUTTON			4
@@ -118,7 +126,7 @@ typedef struct{
 #define WIFI_UDP_REMOTE_PORT	30000				//El puerto UDP en la PC
 
 #define ON10MS					flag1.bit.b0
-#define MPU_DATAREADY			flag1.bit.b1
+#define I2CENABLED				flag1.bit.b1
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -133,6 +141,7 @@ DMA_HandleTypeDef hdma_adc1;
 
 I2C_HandleTypeDef hi2c2;
 DMA_HandleTypeDef hdma_i2c2_rx;
+DMA_HandleTypeDef hdma_i2c2_tx;
 
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim4;
@@ -179,11 +188,14 @@ uint32_t sumADC[NUMCHANNELSADC];
 uint8_t mode			= 0;
 uint8_t time10ms 		= 40;
 uint8_t time100ms		= 10;
+uint8_t time1000ms		= 100;
 uint8_t	timeOutButton	= TIMEOUT_BUTTON;
 uint8_t timeOutAlive 	= TIMEOUT_ALIVE;
 uint32_t myHB			= HEARTBEAT_IDLE;
 uint32_t maskHB			= HEARTBEAT_MASK;
 
+const uint32_t token __attribute__ ((section (".eeprom"), used));
+char strAux[32];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -216,6 +228,10 @@ void buttonTask(_sButton *button);
 void communicationTask();
 
 void inicializarIRs();
+
+void aliveTask();
+
+void I2CTasks();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -327,8 +343,11 @@ void DecodeCMD(struct UNERBUSHandle *aBus, uint8_t iStartData){
 void Do10ms(){
 	ON10MS = 0;
 
-	if(time100ms)
+	if (time100ms)
 		time100ms--;
+
+	if (time1000ms)
+		time1000ms--;
 
 	ESP01_Timeout10ms();
 	UNERBUS_Timeout(&unerbusESP01);
@@ -338,22 +357,22 @@ void Do10ms(){
 void Do100ms(){
 	time100ms = 10;
 
-	if(maskHB & myHB)
+	if (maskHB & myHB)
 		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 0); // ON
 	else
 		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 1); // OFF
 
 	maskHB >>= 1;
-	if(!maskHB)
+	if (!maskHB)
 		maskHB = HEARTBEAT_MASK;
 
-	if(timeOutAlive)
+	if (timeOutAlive)
 		timeOutAlive--;
 
 	if (timeOutButton)
 		timeOutButton--;
 
-	 MPU6050_Read_Data_DMA(&hi2c2);
+	I2CENABLED = ON;
 }
 
 
@@ -410,6 +429,35 @@ void inicializarIRs(){
 	}
 }
 
+void aliveTask(){
+	if (!timeOutAlive){
+		UNERBUS_WriteByte(&unerbusESP01, ACKNOWLEDGE);
+		UNERBUS_Send(&unerbusESP01, ALIVE, 2);
+		UNERBUS_WriteByte(&unerbusPC, ACKNOWLEDGE);
+		UNERBUS_Send(&unerbusPC, ALIVE, 2);
+		timeOutAlive = TIMEOUT_ALIVE;
+	}
+}
+
+void I2CTasks(){
+	if (!time1000ms){
+		sprintf(strAux, "%.3d", mode++);
+		Display_SetCursor(0, 36);
+		Display_WriteString(strAux, Font_16x26, White);
+		I2CENABLED = ON;
+		mode &= 255;
+		time1000ms = 100;
+	}
+
+	if ((HAL_I2C_GetState(&hi2c2) == HAL_I2C_STATE_READY) && I2CENABLED){
+		I2CENABLED = Display_UpdateScreen(&hi2c2);
+	}
+
+	if ((HAL_I2C_GetState(&hi2c2) == HAL_I2C_STATE_READY) && I2CENABLED){
+		MPU6050_Read_Data_DMA(&hi2c2);
+		I2CENABLED = OFF;
+	}
+}
 /* USER CODE END 0 */
 
 /**
@@ -495,6 +543,10 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim1);
 
   MPU6050_Init(&hi2c2);
+
+  Display_Init(&hi2c2);
+
+  flag1.byte = OFF;
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -504,14 +556,6 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  if (!timeOutAlive){
-		  UNERBUS_WriteByte(&unerbusESP01, ACKNOWLEDGE);
-		  UNERBUS_Send(&unerbusESP01, ALIVE, 2);
-		  UNERBUS_WriteByte(&unerbusPC, ACKNOWLEDGE);
-		  UNERBUS_Send(&unerbusPC, ALIVE, 2);
-		  timeOutAlive = TIMEOUT_ALIVE;
-	  }
-
 	  if (!timeOutButton)
 		  buttonTask(&myButton);
 
@@ -521,6 +565,8 @@ int main(void)
 	  if (ON10MS)
 		  Do10ms();
 
+	  aliveTask();
+
 	  communicationTask();
 
 	  ESP01_Task();
@@ -529,6 +575,7 @@ int main(void)
 
 	  UNERBUS_Task(&unerbusPC);
 
+	  I2CTasks();
   }
   /* USER CODE END 3 */
 }
@@ -924,6 +971,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel1_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
+  /* DMA1_Channel4_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
   /* DMA1_Channel5_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel5_IRQn);

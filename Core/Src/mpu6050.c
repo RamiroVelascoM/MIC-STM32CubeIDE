@@ -6,8 +6,10 @@
  */
 
 #include "mpu6050.h"
+#include <stdbool.h>
 
 uint8_t bufData[14];
+
 
 void MPU6050_Init(I2C_HandleTypeDef *hi2c) {
     uint8_t data = 0;
@@ -37,25 +39,7 @@ void MPU6050_Read_Data_DMA(I2C_HandleTypeDef *hi2c){
 
 void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c){
 	extern _sMPUData mpuValues;
-	/*
-	mpuValues.accelX[0] = bufData[1];
-	mpuValues.accelX[1] = bufData[0];
 
-	mpuValues.accelY[0] = bufData[3];
-	mpuValues.accelY[1] = bufData[2];
-
-	mpuValues.accelZ[0] = bufData[5];
-	mpuValues.accelZ[1] = bufData[4];
-
-	mpuValues.gyroX[0] = bufData[9];
-	mpuValues.gyroX[1] = bufData[8];
-
-	mpuValues.gyroY[0] = bufData[11];
-	mpuValues.gyroY[1] = bufData[10];
-
-	mpuValues.gyroZ[0] = bufData[13];
-	mpuValues.gyroZ[1] = bufData[12];
-	*/
 	mpuValues.buffer[0] = bufData[1];
 	mpuValues.buffer[1] = bufData[0];
 	mpuValues.buffer[2] = bufData[3];

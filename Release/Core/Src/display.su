@@ -1,0 +1,10 @@
+../Core/Src/display.c:19:16:Display_WriteCommand	32	static
+../Core/Src/display.c:24:16:Display_WriteCommand_DMA.isra	24	static
+../Core/Src/display.c:86:6:Display_Fill	0	static
+../Core/Src/display.c:32:9:Display_Init	16	static
+../Core/Src/display.c:100:9:Display_UpdateScreen	16	static
+../Core/Src/display.c:141:6:Display_DrawPixel	12	static
+../Core/Src/display.c:173:6:Display_WriteChar	64	static
+../Core/Src/display.c:212:6:Display_WriteString	24	static
+../Core/Src/display.c:234:6:Display_InvertColors	0	static
+../Core/Src/display.c:242:6:Display_SetCursor	0	static

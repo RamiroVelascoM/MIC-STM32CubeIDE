@@ -1,0 +1,3 @@
+../Core/Src/MPU6050.c:14:6:MPU6050_Init	2
+../Core/Src/MPU6050.c:36:6:MPU6050_Read_Data_DMA	1
+../Core/Src/MPU6050.c:40:6:HAL_I2C_MemRxCpltCallback	1
