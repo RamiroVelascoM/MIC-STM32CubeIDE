@@ -16,7 +16,7 @@
 
 #include "stm32f1xx_hal.h"
 #include "fonts.h"
-
+#include <stdio.h>
 // I2c address
 #ifndef Display_I2C_ADDR
 #define Display_I2C_ADDR        0x78
@@ -58,6 +58,15 @@ typedef struct {
     uint8_t Initialized;
 } Display_t;
 
+typedef struct{
+	uint8_t hs;
+	uint8_t min;
+	uint8_t via;
+	char mainText[4];
+	char dateText[8];
+	char sourceText[6];
+	char lowerText[8];
+}_sDisplayData;
 /**
  * FUNCTION DEFINITIONS
  */
@@ -78,5 +87,7 @@ void Display_SetCursor(uint8_t x, uint8_t y);
 void Display_InvertColors(void);
 
 void Display_DrawBitmap(uint8_t W, uint8_t H, const uint8_t* pBMP);
+
+void Display_UpdateInfo(I2C_HandleTypeDef *hi2c, _sDisplayData *mySSD);
 
 #endif  // _display_H

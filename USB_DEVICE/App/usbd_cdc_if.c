@@ -62,8 +62,7 @@ typedef struct{
   */
 
 /* USER CODE BEGIN PRIVATE_TYPES */
-extern uint8_t rxUSBData[256];
-//extern _sDato datosComUSB;
+//extern uint8_t rxUSBData[256];
 /* USER CODE END PRIVATE_TYPES */
 
 /**
@@ -293,10 +292,10 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 	USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
 	USBD_CDC_ReceivePacket(&hUsbDeviceFS);
 
-	memset (rxUSBData, '\0', 256);  // clear the buffer
-	uint8_t len = (uint8_t)*Len;
-	memcpy(rxUSBData, Buf, len);  // copy the data to the buffer
-	memset(Buf, '\0', len);   // clear the Buf also
+	//memset (rxUSBData, '\0', 256);  // clear the buffer
+	//uint8_t len = (uint8_t)*Len;
+	//memcpy(rxUSBData, Buf, len);  // copy the data to the buffer
+	//memset(Buf, '\0', len);   // clear the Buf also
 
 	return (USBD_OK);
   /* USER CODE END 6 */

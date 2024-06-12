@@ -11,6 +11,7 @@ static uint8_t Display_Buffer[Display_WIDTH * Display_HEIGHT / 8];	// Screenbuff
 
 static Display_t Display;	// Screen object
 
+extern _sDisplayData myDisplay;
 /**
  *	BLOCKING METHOD TO WRITE INTO THE DISPLAY
  */
@@ -75,6 +76,23 @@ uint8_t Display_Init(I2C_HandleTypeDef *hi2c)
     Display.CurrentX = 0;		// Set default values for screen object
     Display.CurrentY = 0;
     Display.Initialized = 1;	// Checked initialization of the display
+
+    myDisplay.via = 2;
+    myDisplay.hs = 0;
+    myDisplay.min = 0;
+
+    Display_SetCursor(14, 13);
+    Display_WriteString("MIC", Font_11x18, White);
+    Display_SetCursor(14, 32);
+	Display_WriteString("CAR", Font_11x18, White);
+	Display_SetCursor(77, 16);
+	Display_WriteString("IDLE", Font_11x18, White);
+	Display_SetCursor(76, 37);
+	Display_WriteString("VIA", Font_7x10, White);
+	Display_SetCursor(69, 51);
+	Display_WriteString("TESTING", Font_7x10, White);
+	Display_SetCursor(85,3);
+	Display_WriteString("hh:mm", Font_7x10, White);
 
     return 0;
 }
@@ -223,4 +241,21 @@ void Display_DrawBitmap(uint8_t W, uint8_t H, const uint8_t* pBMP)
 				Display_DrawPixel(x, y, White);
 		}
 	}
+}
+
+void Display_UpdateInfo(I2C_HandleTypeDef *hi2c, _sDisplayData *mySSD)
+{
+	// HOUR UPDATE
+	Display_SetCursor(85,3);
+	sprintf(mySSD->dateText, "%.2d:%.2d", mySSD->hs, mySSD->min);
+	Display_WriteString(mySSD->dateText, Font_7x10, White);
+	// VIA UPDATE
+	Display_SetCursor(101,37);
+	if (mySSD->via == 0)	// VIA USB
+		Display_WriteString("USB", Font_7x10, White);
+	else if (mySSD->via == 1) // VIA ESP
+		Display_WriteString("ESP", Font_7x10, White);
+	else						// VIA PC
+		Display_WriteString("PC", Font_7x10, White);
+	//
 }

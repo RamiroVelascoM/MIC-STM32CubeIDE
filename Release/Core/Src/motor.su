@@ -1,0 +1,2 @@
+../Core/Src/motor.c:10:6:Motors_Init	0	static
+../Core/Src/motor.c:20:6:SetPowerMotor	12	static
