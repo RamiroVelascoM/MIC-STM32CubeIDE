@@ -1,2 +1,2 @@
-../Core/Src/button.c:11:6:inicializarBoton	0	static
-../Core/Src/button.c:20:6:checkMEF	0	static
+../Core/Src/button.c:11:6:Button_Init	0	static
+../Core/Src/button.c:20:6:Button_CheckStatus	0	static

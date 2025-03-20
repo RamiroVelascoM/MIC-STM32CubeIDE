@@ -12,6 +12,7 @@ static uint8_t Display_Buffer[Display_WIDTH * Display_HEIGHT / 8];	// Screenbuff
 static Display_t Display;	// Screen object
 
 extern _sDisplayData myDisplay;
+
 /**
  *	BLOCKING METHOD TO WRITE INTO THE DISPLAY
  */

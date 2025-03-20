@@ -61,12 +61,12 @@ typedef struct
  * 
  * @param button Estructura del boton o pulsador de interes.
  */
-void inicializarBoton(_sButton *button);
+void Button_Init(_sButton *button);
 /**
  * @brief Maquina de estado de un boton o pulsador.
  * 
  * @param button Estructura del boton o pulsador de interes.
  */
-void checkMEF(_sButton *button);
+void Button_CheckStatus(_sButton *button);
 
 #endif /* button_H_ */

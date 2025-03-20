@@ -8,7 +8,7 @@
 
 uint8_t PRESSED = 0;
 
-void inicializarBoton(_sButton *button)
+void Button_Init(_sButton *button)
 {
 	button->value = 0;
 	button->estado = UP;
@@ -17,7 +17,7 @@ void inicializarBoton(_sButton *button)
 	button->timeDiff = 0;
 }
 
-void checkMEF(_sButton *button)
+void Button_CheckStatus(_sButton *button)
 {
 	switch (button->estado)
 	{

@@ -67,6 +67,7 @@ typedef struct{
 	char sourceText[6];
 	char lowerText[8];
 }_sDisplayData;
+
 /**
  * FUNCTION DEFINITIONS
  */

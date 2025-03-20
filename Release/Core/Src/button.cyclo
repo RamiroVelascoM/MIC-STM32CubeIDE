@@ -1,2 +1,2 @@
-../Core/Src/button.c:11:6:inicializarBoton	1
-../Core/Src/button.c:20:6:checkMEF	9
+../Core/Src/button.c:11:6:Button_Init	1
+../Core/Src/button.c:20:6:Button_CheckStatus	9

@@ -30,6 +30,7 @@
 #include "display.h"
 #include "fonts.h"
 #include "motor.h"
+#include "TCRT5000.h"
 #include <stdbool.h>
 // #include "stm32f1xx_hal_flash.h"
 // #include "stm32f1xx_hal_flash_ex.h"
@@ -49,7 +50,6 @@ typedef enum{
 	MPU_6050 = 0xF3,
 	DISPLAY_SSD1306 = 0xF4,
 	MOTORES_N20 = 0xF5,
-	TEST_MOTORES = 0xF6,
     UNKNOWNCOMMAND = 0xFF
 }_eID;
 
@@ -82,7 +82,7 @@ typedef union{
 /**
  * ESTRUCTURAS
  */
-
+/*
 typedef struct{
 	uint8_t valueToMm[8];
 	uint8_t index[8];
@@ -92,6 +92,7 @@ typedef struct{
 	uint16_t buf[8][64];
 	uint32_t sum[8];
 }_sADC;
+*/
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -104,11 +105,11 @@ typedef struct{
 #define OFF						0
 #define ON						1
 #define PRESSED					0
-#define NUMCHANNELSADC			8
+//#define NUMCHANNELSADC			8
 #define TIMEOUT_BUTTON			4
 #define TIMEOUT_ALIVE			50
 #define TIMEOUT_MOTORS			20;
-#define SIZEBUFADC				64
+//#define SIZEBUFADC				64
 #define SIZEBUFRXPC				128
 #define SIZEBUFTXPC				256
 #define SIZEBUFRXESP01			128
@@ -127,7 +128,6 @@ typedef struct{
 
 #define ON10MS					flag1.bit.b0
 #define MPUENABLED				flag1.bit.b1
-#define TEST_N20_ENABLED		flag1.bit.b2
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -164,7 +164,8 @@ _sUNERBUSHandle unerbusPC;
 _sUNERBUSHandle unerbusESP01;
 _sADC myADC;
 _sButton myButton;
-_sMPUData mpuValues;
+_sMPUData myMPU;
+//_sQuaternion quaternionData;
 _sDisplayData myDisplay;
 _sMOTOR myMotor[2];
 
@@ -177,15 +178,6 @@ uint8_t rxUSBData, newData;
 uint8_t UPDATEDISPLAY = 0;
 
 /**
- * DEFINICION DE LAS VARIABLES UTILIZADAS PARA EL ADC
- */
-uint8_t indexADC[NUMCHANNELSADC];
-uint16_t dataADC[NUMCHANNELSADC];
-uint16_t valueADC[NUMCHANNELSADC];
-uint16_t bufADC[NUMCHANNELSADC][SIZEBUFADC];
-uint32_t sumADC[NUMCHANNELSADC];
-
-/**
  * DEFINICION DE DATOS DE MANEJO DE PROGRAMA
  */
 uint8_t mode			= 0;
@@ -194,18 +186,18 @@ uint8_t time100ms		= 10;
 uint8_t time1000ms		= 100;
 uint8_t	timeOutButton	= TIMEOUT_BUTTON;
 uint8_t timeOutAlive 	= TIMEOUT_ALIVE;
-uint8_t timeOutMotors	= TIMEOUT_MOTORS;
+uint8_t timeOutMotors	= 0;
 uint32_t myHB			= HEARTBEAT_IDLE;
 uint32_t maskHB			= HEARTBEAT_MASK;
 
-//const uint32_t token __attribute__ ((section (".eeprom"), used));
-//char strAux[32];
-int8_t powMotor		= 0;
+int8_t powMotor			= 0;
 int8_t dirMotor			= 1;
+
 /**
  * BITMAP BACKGROUND
  */
-const uint8_t myDesignBKG[] __attribute__ ((section (".eeprom"), used)) = {0xff, 0xff, 0x01, 0xff, 0xff, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+const uint8_t myDesignBKG[] __attribute__ ((section (".eeprom"), used)) =
+		{0xff, 0xff, 0x01, 0xff, 0xff, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0xff, 0xfc, 0x0f, 0xf0, 0x0f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0xff, 0xf0, 0x3e, 0x00, 0x00, 0x7e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0xff, 0xe0, 0xf0, 0x00, 0x00, 0x0f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -269,10 +261,6 @@ const uint8_t myDesignBKG[] __attribute__ ((section (".eeprom"), used)) = {0xff,
 		0xff, 0xf0, 0x7e, 0x00, 0x00, 0x7e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0xff, 0xfc, 0x0f, 0xe0, 0x07, 0xf8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0xff, 0xff, 0x01, 0xff, 0xff, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-//const uint16_t refValuesADC[20] = {280, 305, 330, 380, 415, 450, 510, 565, 640, 750, 900, 1080, 1250, 1600, 2040, 2400, 3100, 3720, 3800, 3835};
-const uint16_t refValuesADC[20] = {250, 275, 325, 350, 400, 450, 520, 600, 750, 870, 1000, 1200, 1530, 1960, 2560, 3300, 3650, 3825, 3835, 3840};
-//const uint16_t refValuesADC[20] = {3875, 3870, 3860, 3840, 3400, 2560, 1960, 1530, 1200, 1000, 870, 750, 600, 520, 450, 400, 350, 325, 275, 250};
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -300,19 +288,13 @@ void Do10ms();
 
 void USBReceive(uint8_t *buf, uint16_t len);
 
-void buttonTask(_sButton *button);
+void Button_Task(_sButton *button);
 
-void communicationTask();
+void Communication_Task();
 
-void inicializarIRs();
+void Alive_Task();
 
-void aliveTask();
-
-void I2CTasks();
-
-void convertADCtoMm();
-
-void motorsTest();
+void I2C_Tasks();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -331,6 +313,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
+	TCRT5000_DynamicFilter(&myADC);
+	/*
 	for (uint8_t c=0; c<NUMCHANNELSADC; c++)
 	{
 		myADC.sum[c] -= myADC.buf[c][myADC.index[c]];
@@ -340,6 +324,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
 		myADC.index[c]++;
 		myADC.index[c] &= (SIZEBUFADC-1);
 	}
+	*/
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
@@ -394,39 +379,27 @@ void DecodeCMD(struct UNERBUSHandle *aBus, uint8_t iStartData){
 			length = 17;
 			break;
 		case ALIVE:
-			UNERBUS_WriteByte(aBus, 0x0D);
+			UNERBUS_WriteByte(aBus, ACKNOWLEDGE);
 			length = 2;
 			break;
 		case ANALOG_IR:
-			for (uint8_t c=0; c<NUMCHANNELSADC; c++)
-			{
-				//w.u32 = myADC.value[c];
-				//UNERBUS_WriteByte(aBus, w.u8[0]);
-				//UNERBUS_WriteByte(aBus, w.u8[1]);
-				UNERBUS_WriteByte(aBus, myADC.valueToMm[c]);
-			}
+			UNERBUS_Write(aBus, myADC.valueToMm, 8);
 			length = 9;
-			//length = 17;
 			break;
 		case MPU_6050:
-			UNERBUS_Write(aBus, mpuValues.buffer, 12);
+			UNERBUS_Write(aBus, myMPU.buffer, 12);
 			length = 13;
 			break;
 		case DISPLAY_SSD1306:
 			myDisplay.hs = UNERBUS_GetUInt8(aBus);
 			myDisplay.min = UNERBUS_GetUInt8(aBus);
+			Display_UpdateInfo(&hi2c2, &myDisplay);
 			UPDATEDISPLAY = ON;
 			break;
 		case MOTORES_N20:
 			UNERBUS_WriteByte(aBus, (uint8_t)myMotor[LEFT].pow);
 			UNERBUS_WriteByte(aBus, (uint8_t)myMotor[RIGHT].pow);
 			length = 3;
-			break;
-		case TEST_MOTORES:
-			myMotor[LEFT].pow = UNERBUS_GetInt8(aBus);;
-			myMotor[RIGHT].pow = UNERBUS_GetInt8(aBus);
-			//timeOutMotors = TIMEOUT_MOTORS;
-			//TEST_N20_ENABLED = ON;
 			break;
 		default:
 			break;
@@ -447,7 +420,7 @@ void Do10ms(){
 	if (time1000ms)
 		time1000ms--;
 
-	convertADCtoMm();
+	TCRT5000_ADCtoMm(&myADC);
 
 	ESP01_Timeout10ms();
 
@@ -473,36 +446,33 @@ void Do100ms(){
 
 	if (timeOutButton)
 		timeOutButton--;
-
-	//if (TEST_N20_ENABLED == ON)
-	//	motorsTest();
 }
 
 void USBReceive(uint8_t *buf, uint16_t len){
 	UNERBUS_ReceiveBuf(&unerbusPC, buf, len);
 }
 
-void buttonTask(_sButton *button){
-	timeOutButton = TIMEOUT_BUTTON;
+void Button_Task(_sButton *button){
+	if (!timeOutButton){
+		timeOutButton = TIMEOUT_BUTTON;
+		myButton.value = HAL_GPIO_ReadPin(SW0_GPIO_Port, SW0_Pin);
+		Button_CheckStatus(&myButton);
 
-	myButton.value = HAL_GPIO_ReadPin(SW0_GPIO_Port, SW0_Pin);
-	checkMEF(&myButton);
-
-	switch (button->estado){
-		case DOWN:
-			HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 0);	// ON
-			break;
-		case RISING:
-			mode++;
-			if (mode == maxMODES)
-				mode = 0;						// Increase mode (circular: 0-MAX)
-			break;
-		default:
-			break;
+		switch (button->estado){
+			case DOWN:
+				HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 0);	// ON
+				break;
+			case RISING:
+				mode++;
+				mode &= (maxMODES-1);
+				break;
+			default:
+				break;
+		}
 	}
 }
 
-void communicationTask(){
+void Communication_Task(){
 	if(unerbusESP01.tx.iRead != unerbusESP01.tx.iWrite){
 		w.u8[0] = unerbusESP01.tx.iWrite - unerbusESP01.tx.iRead;
 		w.u8[0] &= unerbusESP01.tx.maxIndexRingBuf;
@@ -526,17 +496,7 @@ void communicationTask(){
 	}
 }
 
-void inicializarIRs(){
-	for (uint8_t c=0; c<NUMCHANNELSADC; c++){
-		for (uint8_t i=0; i<20; i++){
-			myADC.lookUpTable[c][i] = refValuesADC[i];
-		}
-		myADC.valueToMm[c] = 0;
-		myADC.value[c] = 0;
-	}
-}
-
-void aliveTask(){
+void Alive_Task(){
 	if (!timeOutAlive){
 		UNERBUS_WriteByte(&unerbusESP01, ACKNOWLEDGE);
 		UNERBUS_Send(&unerbusESP01, ALIVE, 2);
@@ -546,17 +506,10 @@ void aliveTask(){
 	}
 }
 
-void I2CTasks(){
+void I2C_Tasks(){
 	if (!time1000ms){
 		time1000ms = 100;
-
-		Display_SetCursor(69, 51);
-		sprintf(myDisplay.lowerText, "I:%5d", myADC.value[0]);
-		Display_WriteString(myDisplay.lowerText, Font_7x10, White);
-
-		Display_UpdateInfo(&hi2c2, &myDisplay);
-		UPDATEDISPLAY = ON;
-
+		/*
 		if (powMotor == 70 || powMotor == -70){
 			dirMotor = -dirMotor;
 		}
@@ -564,6 +517,7 @@ void I2CTasks(){
 		myMotor[LEFT].pow = powMotor;
 		myMotor[RIGHT].pow = -powMotor;
 		SetPowerMotor(&htim4, &myMotor[LEFT], &myMotor[RIGHT], myMotor[LEFT].pow, myMotor[RIGHT].pow);
+		*/
 	}
 
 	if ((HAL_I2C_GetState(&hi2c2) == HAL_I2C_STATE_READY) && UPDATEDISPLAY){
@@ -571,31 +525,12 @@ void I2CTasks(){
 	}
 
 	if ((HAL_I2C_GetState(&hi2c2) == HAL_I2C_STATE_READY) && MPUENABLED){
-		MPU6050_Read_Data_DMA(&hi2c2);
+		MPU6050_ReadAll(&hi2c2);
+		//MPU6050_UpdateQuaternion(&hi2c2, &quaternionData);
 		MPUENABLED = OFF;
 	}
 }
 
-void convertADCtoMm(){
-	for (uint8_t c=0; c<NUMCHANNELSADC; c++){
-		for (uint8_t i=0; i<20; i++){
-			if (myADC.value[c] >= myADC.lookUpTable[c][i]){
-				myADC.valueToMm[c] = (i*5);
-			}
-		}
-	}
-}
-
-void motorsTest(){
-	if (!timeOutMotors){
-		SetPowerMotor(&htim4, &myMotor[LEFT], &myMotor[RIGHT], 0, 0);
-		TEST_N20_ENABLED = OFF;
-	}
-	else{
-		SetPowerMotor(&htim4, &myMotor[LEFT], &myMotor[RIGHT], myMotor[LEFT].pow, myMotor[RIGHT].pow);
-		timeOutMotors--;
-	}
-}
 /* USER CODE END 0 */
 
 /**
@@ -652,8 +587,9 @@ int main(void)
   /**
    * INITIALIZATION OF OTHER FUNCTIONS
    */
-  inicializarBoton(&myButton);
-  inicializarIRs();
+  Button_Init(&myButton);
+
+  TCRT5000_Init(&myADC);
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -677,7 +613,6 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim1);
 
   HAL_TIM_Base_Start(&htim4);
-
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
@@ -694,9 +629,9 @@ int main(void)
   HAL_UART_Receive_IT(&huart1, &dataRXESP01, 1);
 
   MPU6050_Init(&hi2c2);
+  MPU6050_Calibrate(&hi2c2);
 
   Display_Init(&hi2c2);
-
   Display_DrawBitmap(Display_WIDTH, Display_HEIGHT, myDesignBKG);
 
   flag1.byte = OFF;
@@ -709,18 +644,17 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  if (!timeOutButton)
-		  buttonTask(&myButton);
-
 	  if (!time100ms)
 		  Do100ms();
 
 	  if (ON10MS)
 		  Do10ms();
 
-	  aliveTask();
+	  Alive_Task();
 
-	  communicationTask();
+	  Button_Task(&myButton);
+
+	  Communication_Task();
 
 	  ESP01_Task();
 
@@ -728,7 +662,7 @@ int main(void)
 
 	  UNERBUS_Task(&unerbusPC);
 
-	  I2CTasks();
+	  I2C_Tasks();
   }
   /* USER CODE END 3 */
 }
