@@ -42,7 +42,7 @@ typedef enum{
 } _eESP01STATUS;
 
 
-#define ESP01RXBUFAT		128
+#define ESP01RXBUFAT		256//128
 #define ESP01TXBUFAT		256
 
 

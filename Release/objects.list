@@ -1,5 +1,7 @@
 "./Core/Src/ESP01.o"
+"./Core/Src/INFRARED.o"
 "./Core/Src/MPU6050.o"
+"./Core/Src/PID.o"
 "./Core/Src/TCRT5000.o"
 "./Core/Src/UNERBUS.o"
 "./Core/Src/button.o"

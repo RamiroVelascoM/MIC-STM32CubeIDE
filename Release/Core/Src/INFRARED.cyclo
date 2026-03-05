@@ -1,0 +1,4 @@
+../Core/Src/INFRARED.c:12:6:Infrared_Init	3
+../Core/Src/INFRARED.c:29:6:Infrared_Filter	2
+../Core/Src/INFRARED.c:51:6:Infrared_To8Bits	2
+../Core/Src/INFRARED.c:59:6:Infrared_Convert	6

@@ -9,6 +9,7 @@
 
 //const uint16_t refValuesADC[20] = {280, 305, 330, 380, 415, 450, 510, 565, 640, 750, 900, 1080, 1250, 1600, 2040, 2400, 3100, 3720, 3800, 3835};
 const uint16_t refValuesADC[20] = {250, 275, 325, 350, 400, 450, 520, 600, 750, 870, 1000, 1200, 1530, 1960, 2560, 3300, 3650, 3825, 3835, 3840};
+//const uint16_t refValuesADC[20] = {3840, 3835, 3825, 3650, 3300, 2560, 1960, 1530, 1200, 1000, 870, 750, 600, 520, 450, 400, 350, 325, 275, 250};
 //const uint16_t refValuesADC[20] = {3875, 3870, 3860, 3840, 3400, 2560, 1960, 1530, 1200, 1000, 870, 750, 600, 520, 450, 400, 350, 325, 275, 250};
 
 
@@ -26,19 +27,27 @@ void TCRT5000_DynamicFilter(_sADC *dataADC){
 
 void TCRT5000_Init(_sADC *dataADC){
 	for (uint8_t c=0; c<NUMCHANNELSADC; c++){
-		for (uint8_t i=0; i<20; i++){
+		for (uint8_t i=0; i<LOOK_UP_TABLE_VALUES; i++){
 			dataADC->lookUpTable[c][i] = refValuesADC[i];
 		}
 		dataADC->valueToMm[c] = 0;
 		dataADC->value[c] = 0;
 	}
+	dataADC->threshold[0] = 90; // PARED DERECHA
+	dataADC->threshold[1] = 120; // DIAGONAL DERECHA
+	dataADC->threshold[2] = 70; // FRONTAL 1
+	dataADC->threshold[3] = 50; // INFERIOR DELANTERA
+	dataADC->threshold[4] = 70; // FRONTAL 2
+	dataADC->threshold[5] = 120; // DIAGONAL IZQUIERDA
+	dataADC->threshold[6] = 90; // PARED IZQUIERDA
+	dataADC->threshold[7] = 50; // INFERIOR TRASERA
 }
 
 void TCRT5000_ADCtoMm(_sADC *dataADC){
 	for (uint8_t c=0; c<NUMCHANNELSADC; c++){
-		for (uint8_t i=0; i<20; i++){
+		for (uint8_t i=0; i<LOOK_UP_TABLE_VALUES; i++){
 			if (dataADC->value[c] >= dataADC->lookUpTable[c][i]){
-				dataADC->valueToMm[c] = (i*5);
+				dataADC->valueToMm[c] = 100-(i*5);
 			}
 		}
 	}

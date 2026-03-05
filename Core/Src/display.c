@@ -90,8 +90,8 @@ uint8_t Display_Init(I2C_HandleTypeDef *hi2c)
 	Display_WriteString("IDLE", Font_11x18, White);
 	Display_SetCursor(76, 37);
 	Display_WriteString("VIA", Font_7x10, White);
-	Display_SetCursor(69, 51);
-	Display_WriteString("TESTING", Font_7x10, White);
+	//Display_SetCursor(69, 51);
+	//Display_WriteString("TESTING", Font_7x10, White);
 	Display_SetCursor(85,3);
 	Display_WriteString("hh:mm", Font_7x10, White);
 

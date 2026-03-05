@@ -29,11 +29,15 @@
 #define FIFO_COUNTH 			0x72
 #define FIFO_R_W				0x74
 
-#define MPU_TIMEOUT				1000//HAL_MAX_DELAY
+#define MPU_PID_SCALE			10
+#define MPU_GYRO_SCALAR			10 		// SENSIBILIDAD / RESOLUCION -> (65536) / (65.5*100
+#define MPU_TIMEOUT				500		//HAL_MAX_DELAY
+#define GYRO_THRESHOLD			50
+#define GYRO_SENSITIVITY		65536
 
 typedef struct {
 	// STORING DATA BUFFER
-	uint8_t buffer[12];
+	uint8_t buffer[14];
 
 	// POSITION, VELOCITY AND ACCELERATION DATA
 	int16_t AccX;
@@ -57,14 +61,9 @@ typedef struct {
 	int32_t RawGyrY;
 	int32_t RawGyrZ;
 
-	int16_t Roll;
-	int16_t Pitch;
 	int16_t Yaw;
-
-	int32_t Qw;
-	int32_t Qx;
-	int32_t Qy;
-	int32_t Qz;
+	int32_t Yaw_x10;
+	int64_t rawYaw;
 }_sMPUData;
 
 
@@ -98,5 +97,24 @@ void MPU6050_Calibrate(I2C_HandleTypeDef *hi2c);
  */
 void MPU6050_ReadAll(I2C_HandleTypeDef *hi2c);
 
+/**
+ * @brief MPU6050_GetYaw
+ *
+ * Obtener el yaw del auto a traves del MPU6050
+ *
+ * @param hi2c: Handler del protocolo de comunicacion I2C
+ * @return void
+ */
+void MPU6050_GetYaw(I2C_HandleTypeDef *hi2c);
 
+
+/**
+ * @brief MPU6050_ResetYaw
+ *
+ * Resetea el yaw del auto a traves del MPU6050
+ *
+ * @param hi2c: Handler del protocolo de comunicacion I2C
+ * @return void
+ */
+void MPU6050_ResetYaw(I2C_HandleTypeDef *hi2c);
 #endif /* INC_MPU6050_H_ */

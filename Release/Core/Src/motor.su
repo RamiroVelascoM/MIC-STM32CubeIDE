@@ -1,2 +1,3 @@
-../Core/Src/motor.c:10:6:Motors_Init	0	static
-../Core/Src/motor.c:20:6:SetPowerMotor	12	static
+../Core/Src/motor.c:11:6:Motors_Init	0	static
+../Core/Src/motor.c:23:6:Set_Power_Motor	12	static
+../Core/Src/motor.c:52:6:Set_PWM_Motor	12	static

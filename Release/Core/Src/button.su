@@ -1,2 +1,5 @@
-../Core/Src/button.c:11:6:Button_Init	0	static
-../Core/Src/button.c:20:6:Button_CheckStatus	0	static
+../Core/Src/button.c:24:6:BUTTON_Init	0	static
+../Core/Src/button.c:36:6:BUTTON_Update	16	static
+../Core/Src/button.c:118:6:BUTTON_Register_PressReleasedCallback	0	static
+../Core/Src/button.c:130:6:BUTTON_Register_LongPressCallback	0	static
+../Core/Src/button.c:137:16:BUTTON_GetEvent	0	static

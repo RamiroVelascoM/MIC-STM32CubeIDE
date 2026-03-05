@@ -10,16 +10,10 @@
 #include "math.h"
 #include <stdbool.h>
 
-#define READING_ALL			0
-#define READING_ACC 		1
-#define READING_GYR 		2
 #define NUM_SAMPLES			1000
 #define SCALE_FACTOR		16384
-//#define TIME_FACTOR			10/1000
 
 uint8_t bufData[14];
-//uint8_t buf_FIFO[42];
-//uint8_t countFIFO = 42;
 
 extern _sMPUData myMPU;
 
@@ -34,49 +28,17 @@ void MPU6050_Init(I2C_HandleTypeDef *hi2c) {
         data = 0x00;
         HAL_I2C_Mem_Write(hi2c, MPU6050_ADDR, POWER_MANAGEMENT_REG, 1, &data, 1, MPU_TIMEOUT);
 
-        // Set data rate of 1 KHz (default)
-        data = 0x07;
-		HAL_I2C_Mem_Write(hi2c, MPU6050_ADDR, SMPLRT_DIV_REG, 1, &data, 1, MPU_TIMEOUT);
-
         // Set accelerometer range of +/- 2g (default)
         data = 0x00;
         HAL_I2C_Mem_Write(hi2c, MPU6050_ADDR, ACCEL_CONFIG_REG, 1, &data, 1, MPU_TIMEOUT);
 
-        // Set gyroscope range of +/- 250 degree/s (default)
-        data = 0x00;
+        // Set gyroscope range of +/- 500 degree/s
+        data = 0x08;
         HAL_I2C_Mem_Write(hi2c, MPU6050_ADDR, GYRO_CONFIG_REG, 1, &data, 1, MPU_TIMEOUT);
 
-		// Set Digital Low Pass Filter
-        data = 0x04;
+		// Set Digital Low Pass Filter (44 Hz)
+        data = 0x03;
 		HAL_I2C_Mem_Write(hi2c, MPU6050_ADDR, CONFIG, 1, &data, 1, MPU_TIMEOUT);
-
-		/* DMP */
-		/*
-		// Disable DMP
-		data = 0x00;
-		HAL_I2C_Mem_Write(hi2c, MPU6050_ADDR, USER_CTRL, 1, &data, 1, MPU_TIMEOUT);
-
-		// Reset DMP
-		data = 0x80;
-		HAL_I2C_Mem_Write(hi2c, MPU6050_ADDR, USER_CTRL, 1, &data, 1, MPU_TIMEOUT);
-
-		// Enable DMP
-		data = 0x08;
-		HAL_I2C_Mem_Write(hi2c, MPU6050_ADDR, USER_CTRL, 1, &data, 1, MPU_TIMEOUT);
-
-		// Enable FIFO for gyroscope and accelerometer data
-		data = 0x78;
-		HAL_I2C_Mem_Write(hi2c, MPU6050_ADDR, FIFO_EN, 1, &data, 1, MPU_TIMEOUT);
-
-		// Reset FIFO
-		data = 0x04;
-		HAL_I2C_Mem_Write(hi2c, MPU6050_ADDR, USER_CTRL, 1, &data, 1, MPU_TIMEOUT);
-
-		// Enable FIFO
-		data = 0x40;
-		HAL_I2C_Mem_Write(hi2c, MPU6050_ADDR, USER_CTRL, 1, &data, 1, MPU_TIMEOUT);
-		*/
-		/* DMP */
 
 		myMPU.AccX = 0, myMPU.AccY = 0, myMPU.AccZ = 0;
 		myMPU.GyrX = 0, myMPU.GyrY = 0, myMPU.GyrZ = 0;
@@ -87,8 +49,7 @@ void MPU6050_Init(I2C_HandleTypeDef *hi2c) {
 
 		for (uint8_t i=0; i<14; i++){
 			bufData[i] = 0;
-			if (i<12)
-				myMPU.buffer[i] = 0;
+			myMPU.buffer[i] = 0;
 		}
     }
 }
@@ -116,32 +77,22 @@ void MPU6050_Calibrate(I2C_HandleTypeDef *hi2c){
 void MPU6050_ReadAll(I2C_HandleTypeDef *hi2c){
 	// Read data from MPU
 	HAL_I2C_Mem_Read_DMA(hi2c, MPU6050_ADDR, ACCEL_XOUT_REG, 1, bufData, 14);
-	// Read data from FIFO
-	// if (FIFO_OFLOW_INT == 1) -> DATA OVERFLOW -> NEW DATA!
-	//HAL_I2C_Mem_Read_DMA(hi2c, MPU6050_ADDR, FIFO_R_W, 1, buf_FIFO, countFIFO);
 
 }
 
+void MPU6050_GetYaw(I2C_HandleTypeDef *hi2c){
+	if (myMPU.GyrZ > GYRO_THRESHOLD || myMPU.GyrZ < -GYRO_THRESHOLD){
+		myMPU.rawYaw += (int64_t)(myMPU.GyrZ * 10); // 10 DELTA T
+	}
+	myMPU.Yaw = myMPU.rawYaw/GYRO_SENSITIVITY;
+	myMPU.Yaw_x10 = myMPU.Yaw*MPU_PID_SCALE;
+}
+
 void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c){
-	/*
-	myMPU.Qw = (((uint32_t)buf_FIFO[0] << 24) | ((uint32_t)buf_FIFO[1] << 16) | ((uint32_t)buf_FIFO[2] << 8) | buf_FIFO[3]);
-	myMPU.Qx = (((uint32_t)buf_FIFO[4] << 24) | ((uint32_t)buf_FIFO[5] << 16) | ((uint32_t)buf_FIFO[6] << 8) | buf_FIFO[7]);
-	myMPU.Qy = (((uint32_t)buf_FIFO[8] << 24) | ((uint32_t)buf_FIFO[9] << 16) | ((uint32_t)buf_FIFO[10] << 8) | buf_FIFO[11]);
-	myMPU.Qz = (((uint32_t)buf_FIFO[12] << 24) | ((uint32_t)buf_FIFO[13] << 16) | ((uint32_t)buf_FIFO[14] << 8) | buf_FIFO[15]);
-
-	myMPU.GyrX = (((uint32_t)buf_FIFO[16] << 24) | ((uint32_t)buf_FIFO[17] << 16) | ((uint32_t)buf_FIFO[18] << 8) | buf_FIFO[19]);
-	myMPU.GyrY = (((uint32_t)buf_FIFO[20] << 24) | ((uint32_t)buf_FIFO[21] << 16) | ((uint32_t)buf_FIFO[22] << 8) | buf_FIFO[23]);
-	myMPU.GyrZ = (((uint32_t)buf_FIFO[24] << 24) | ((uint32_t)buf_FIFO[25] << 16) | ((uint32_t)buf_FIFO[26] << 8) | buf_FIFO[27]);
-
-	myMPU.AccX = (((uint32_t)buf_FIFO[28] << 24) | ((uint32_t)buf_FIFO[29] << 16) | ((uint32_t)buf_FIFO[30] << 8) | buf_FIFO[31]);
-	myMPU.AccY = (((uint32_t)buf_FIFO[32] << 24) | ((uint32_t)buf_FIFO[33] << 16) | ((uint32_t)buf_FIFO[34] << 8) | buf_FIFO[35]);
-	myMPU.AccZ = (((uint32_t)buf_FIFO[36] << 24) | ((uint32_t)buf_FIFO[37] << 16) | ((uint32_t)buf_FIFO[38] << 8) | buf_FIFO[39]);
-	*/
-
 	// ACC: GET RAW INFORMATION
-	myMPU.AccX = (((bufData[0] << 8) | bufData[1]));
-	myMPU.AccY = (((bufData[2] << 8) | bufData[3]));
-	myMPU.AccZ = (((bufData[4] << 8) | bufData[5]));
+	myMPU.AccX = (int16_t)(((bufData[0] << 8) | bufData[1]));
+	myMPU.AccY = (int16_t)(((bufData[2] << 8) | bufData[3]));
+	myMPU.AccZ = (int16_t)(((bufData[4] << 8) | bufData[5]));
 	// ACC: CALCULATE TRUE ACCELERATION
 	myMPU.AccX -= myMPU.OffsetAccX;
 	myMPU.AccY -= myMPU.OffsetAccY;
@@ -155,9 +106,9 @@ void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c){
 	myMPU.buffer[5] = (uint8_t)((myMPU.AccZ >> 8) & 0xFF);
 
 	// GYR: GET RAW INFORMATION
-	myMPU.GyrX = (((bufData[8] << 8) | bufData[9]));
-	myMPU.GyrY = (((bufData[10] << 8) | bufData[11]));
-	myMPU.GyrZ = (((bufData[12] << 8) | bufData[13]));
+	myMPU.GyrX = (int16_t)(((bufData[8] << 8) | bufData[9]));
+	myMPU.GyrY = (int16_t)(((bufData[10] << 8) | bufData[11]));
+	myMPU.GyrZ = (int16_t)(((bufData[12] << 8) | bufData[13]));
 	// GYR: CALCULATE TRUE ACCELERATION
 	myMPU.GyrX -= myMPU.OffsetGyrX;
 	myMPU.GyrY -= myMPU.OffsetGyrY;
@@ -169,6 +120,16 @@ void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c){
 	myMPU.buffer[9] = (uint8_t)((myMPU.GyrY >> 8) & 0xFF);
 	myMPU.buffer[10] = (uint8_t)(myMPU.GyrZ & 0xFF);
 	myMPU.buffer[11] = (uint8_t)((myMPU.GyrZ >> 8) & 0xFF);
+
+	myMPU.buffer[12] = (uint8_t)(myMPU.Yaw & 0xFF);
+	myMPU.buffer[13] = (uint8_t)((myMPU.Yaw >> 8) & 0xFF);
+}
+
+void MPU6050_ResetYaw(I2C_HandleTypeDef *hi2c){
+	myMPU.GyrZ = 0;
+	myMPU.rawYaw = 0;
+	myMPU.Yaw = 0;
+	myMPU.Yaw_x10 = 0;
 }
 
 

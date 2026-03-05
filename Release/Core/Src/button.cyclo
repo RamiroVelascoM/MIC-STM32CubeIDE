@@ -1,2 +1,5 @@
-../Core/Src/button.c:11:6:Button_Init	1
-../Core/Src/button.c:20:6:Button_CheckStatus	9
+../Core/Src/button.c:24:6:BUTTON_Init	1
+../Core/Src/button.c:36:6:BUTTON_Update	16
+../Core/Src/button.c:118:6:BUTTON_Register_PressReleasedCallback	2
+../Core/Src/button.c:130:6:BUTTON_Register_LongPressCallback	2
+../Core/Src/button.c:137:16:BUTTON_GetEvent	1

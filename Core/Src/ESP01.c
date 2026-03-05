@@ -406,7 +406,7 @@ static void ESP01ATDecode(){
                     esp01nBytes *= 10;
                     esp01nBytes += (responses[indexResponse][1] - '0');
                     esp01nBytes -= (indexResponseChar-3);
-                    if(esp01nBytes<128 && value==responses[indexResponse][indexResponseChar]){
+                    if(esp01nBytes<256 && value==responses[indexResponse][indexResponseChar]){
                         if(esp01nBytes == 0){
                             esp01HState = (responses[indexResponse][2] - '0');
                             esp01HState *= 10;
@@ -752,6 +752,7 @@ static void ESP01SENDData(){
 		if(!esp01TimeoutTxSymbol){
 			esp01irTX = esp01iwTX;
 			esp01Flags.bit.WAITINGSYMBOL = 0;
+			esp01Flags.bit.SENDINGDATA = 0;  // Evita el Deadlock permanente
 			esp01ATSate = ESP01ATAT;
 			esp01TimeoutTask = 10;
 		}
