@@ -68,7 +68,11 @@ typedef enum{
 	ACTION_GIRO_DERECHA = 3,
 	ACTION_GIRO_IZQUIERDA = 4,
 	ACTION_GIRO_EN_U = 5,
-	ACTION_CRUCE_CIEGO = 6
+	ACTION_CRUCE_CIEGO = 6,
+	ACTION_CRUCE_T = 7,
+	ACTION_CRUCE_L = 8,
+	ACTION_CRUCE_J = 9,
+	ACTION_CRUCE_X = 10
 }_eACTIONS;
 
 typedef enum{
@@ -126,9 +130,9 @@ typedef union{
 #define SIZEBUFTXESP01			256
 
 #define HEARTBEAT_MASK			0x80000000
-#define	HEARTBEAT_IDLE			0xFAAAFF00
-#define HEARTBEAT_MODE1			0x88888888
-#define HEARTBEAT_MODE2			0xA0A0A0A0
+#define	HEARTBEAT_IDLE			0xFF00C000
+#define HEARTBEAT_MODE1			0xFF00CC00
+#define HEARTBEAT_MODE2			0xFF00CCC0
 #define	HEARTBEAT_WIFI_READY	0xF0A0A0A0
 #define	HEARTBEAT_UDP_READY		0xF0AAF0AA
 
@@ -142,7 +146,11 @@ typedef union{
 #define MPUENABLED				flag1.bit.b1
 #define MODESTARTED				flag1.bit.b2
 #define TURNING					flag1.bit.b3
+#define CHOSESIDE				flag1.bit.b4
+#define TURNRIGHT				flag1.bit.b5
+#define TURNSMOOTH				flag1.bit.b6
 
+/*
 #define LEFT_SIDE				6
 #define RIGHT_SIDE				0
 #define FRONT_LEFT				5
@@ -151,6 +159,7 @@ typedef union{
 #define FRONT_2					4
 #define GROUND_BACK				7
 #define GROUND_FRONT			3
+*/
 
 #define IR_IZQ					myADC.millimeterSamples[6]//6
 #define IR_DER					myADC.millimeterSamples[0]//0
@@ -163,7 +172,7 @@ typedef union{
 
 #define PARED_DERECHA			flag2.bit.b0
 #define DIAG_DERECHA			flag2.bit.b1
-#define PARED_DELANTERA_1		flag2.bit.b2
+#define PARED_DELANTERA			flag2.bit.b2
 #define PISO_ADELANTE			flag2.bit.b3
 #define PARED_DELANTERA_2		flag2.bit.b4
 #define DIAG_IZQUIERDA			flag2.bit.b5
@@ -221,7 +230,6 @@ uint8_t bufRXESP01[SIZEBUFRXESP01], bufTXESP01[SIZEBUFTXESP01], dataRXESP01;
 uint8_t rxUSBData, newData;
 uint8_t UPDATEDISPLAY = 0;
 int8_t testds = 0;
-
 /**
  * DEFINICION DE DATOS DE MANEJO DE PROGRAMA
  */
@@ -376,6 +384,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
 	Infrared_Filter(&myADC);
+
+	if (TURNING == OFF)
+		scanRoute();
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
@@ -453,8 +464,6 @@ void DecodeCMD(struct UNERBUSHandle *aBus, uint8_t iStartData){
 		case SEND_N20:
 			myMotor[LEFT].pow = UNERBUS_GetInt8(aBus);
 			myMotor[RIGHT].pow = UNERBUS_GetInt8(aBus);
-			myMotor[LEFT].base = UNERBUS_GetUInt16(aBus);
-			myMotor[RIGHT].base = UNERBUS_GetUInt16(aBus);
 			Set_Power_Motor(&htim4, &myMotor[LEFT], &myMotor[RIGHT], myMotor[LEFT].pow, myMotor[RIGHT].pow);
 			break;
 		case BUTTONS:
@@ -465,22 +474,22 @@ void DecodeCMD(struct UNERBUSHandle *aBus, uint8_t iStartData){
 			PID_Navigation.Kp = UNERBUS_GetUInt16(aBus);
 			PID_Navigation.Ki = UNERBUS_GetUInt16(aBus);
 			PID_Navigation.Kd = UNERBUS_GetUInt16(aBus);
-			PID_Navigation.output = UNERBUS_GetInt8(aBus);
-			PID_Navigation.base = UNERBUS_GetInt8(aBus);
+			PID_Navigation.output = UNERBUS_GetUInt8(aBus);
+			PID_Navigation.base = UNERBUS_GetUInt8(aBus);
 			break;
 		case SET_PID_TURN:
 			PID_Turn.Kp = UNERBUS_GetUInt16(aBus);
 			PID_Turn.Ki = UNERBUS_GetUInt16(aBus);
 			PID_Turn.Kd = UNERBUS_GetUInt16(aBus);
-			PID_Turn.output = UNERBUS_GetInt8(aBus);
-			PID_Turn.base = UNERBUS_GetInt8(aBus);
+			PID_Turn.output = UNERBUS_GetUInt8(aBus);
+			PID_Turn.base = UNERBUS_GetUInt8(aBus);
 			break;
 		case SET_PID_U_TURN:
 			PID_U_Turn.Kp = UNERBUS_GetUInt16(aBus);
 			PID_U_Turn.Ki = UNERBUS_GetUInt16(aBus);
 			PID_U_Turn.Kd = UNERBUS_GetUInt16(aBus);
-			PID_U_Turn.output = UNERBUS_GetInt8(aBus);
-			PID_U_Turn.base = UNERBUS_GetInt8(aBus);
+			PID_U_Turn.output = UNERBUS_GetUInt8(aBus);
+			PID_U_Turn.base = UNERBUS_GetUInt8(aBus);
 			break;
 		case SET_IR_THRESHOLD:
 			for (uint8_t i=0; i<ADC_CHANNELS; i++)
@@ -508,6 +517,10 @@ void Do10ms(){
 	if (timeOutButton)
 		timeOutButton--;
 
+	Alive_Task();
+
+	Button_Task(&myButton);
+
 	ESP01_Timeout10ms();
 
 	UNERBUS_Timeout(&unerbusESP01);
@@ -516,8 +529,7 @@ void Do10ms(){
 
 	Infrared_Convert(&myADC);
 
-	if (TURNING == OFF)
-		scanRoute();
+	modeTask();
 
 	robotTask();
 }
@@ -540,22 +552,22 @@ void Do100ms(){
 
 void Do1000ms(){
 	time1000ms = 100;
-	int16_t minFrontDist = (IR_FRONT_1 < IR_FRONT_2) ? IR_FRONT_1 : IR_FRONT_2;
+	//int16_t minFrontDist = (IR_FRONT_1 < IR_FRONT_2) ? IR_FRONT_1 : IR_FRONT_2;
 
 	Display_SetCursor(5, 5);
 	sprintf(strAux, "POWL %.2d POWR %.2d", myMotor[LEFT].pow, myMotor[RIGHT].pow);
 	Display_WriteString(strAux, Font_7x10, White);
 
 	Display_SetCursor(5, 17);
-	sprintf(strAux, "pid %.3d, MFD %d", testds, minFrontDist);
+	sprintf(strAux, "pid %.3d, ir1 %4d %d", testds, myADC.filteredSamples[FRONT_RIGHT], IR_DIAG_DER);
 	Display_WriteString(strAux, Font_7x10, White);
 
 	Display_SetCursor(5, 29);
-	sprintf(strAux, "I %d F %d D %d", PARED_IZQUIERDA, PARED_DELANTERA_1, PARED_DERECHA);
+	sprintf(strAux, "I%d DI%d F%d DD%d D%d", PARED_IZQUIERDA, DIAG_IZQUIERDA, PARED_DELANTERA, DIAG_DERECHA, PARED_DERECHA);
 	Display_WriteString(strAux, Font_7x10, White);
 
 	Display_SetCursor(5, 41);
-	sprintf(strAux, "RM%d ACT%d Y %.3d", robotMode, robotAction, abs(myMPU.Yaw));
+	sprintf(strAux, "RM%d ACT%d Y %.3d", robotMode, robotAction, myMPU.Yaw);
 	Display_WriteString(strAux, Font_7x10, White);
 
 	UPDATEDISPLAY = ON;
@@ -646,31 +658,57 @@ void modeTask(){
 			if (MODESTARTED == OFF){
 				robotAction = ACTION_STANDBY;
 			}else{
-				if (PARED_DELANTERA_1 == OFF){
+				if (PARED_DELANTERA == OFF){
 					robotAction = ACTION_AVANZAR;
-				} else if ((PARED_DELANTERA_1 == ON)&&(TURNING == OFF)){
+					/*
+					if ((PISO_ATRAS == ON)&&(!PARED_IZQUIERDA || !PARED_DERECHA)&&(TURNING == OFF)){
+						if ((PARED_IZQUIERDA == ON && PARED_DERECHA == OFF)){
+							robotAction = ACTION_CRUCE_L;
+							PID_Reset(&PID_Turn);
+						} else if ((PARED_IZQUIERDA == OFF && PARED_DERECHA == ON)){
+							robotAction = ACTION_CRUCE_J;
+							PID_Reset(&PID_Turn);
+						}
+						TURNING = ON;
+						TURNSMOOTH = ON;
+					} else {
+						robotAction = ACTION_AVANZAR;
+					}
+					*/
+				} else if ((PARED_DELANTERA == ON)&&(TURNING == OFF)){
 					if (PARED_IZQUIERDA && !PARED_DERECHA){
 						robotAction = ACTION_GIRO_DERECHA;
 						PID_Reset(&PID_Turn);
-					}
-					else if (!PARED_IZQUIERDA && PARED_DERECHA){
+					} else if (!PARED_IZQUIERDA && PARED_DERECHA){
 						robotAction = ACTION_GIRO_IZQUIERDA;
 						PID_Reset(&PID_Turn);
-					}
-					else if (PARED_IZQUIERDA && PARED_DERECHA){
+					} else if (PARED_IZQUIERDA && PARED_DERECHA){
 						robotAction = ACTION_GIRO_EN_U;
 						PID_Reset(&PID_U_Turn);
+					} else if (!PARED_IZQUIERDA && !PARED_DERECHA){
+						robotAction = ACTION_CRUCE_T;
+						PID_Reset(&PID_Turn);
 					}
 					MPU6050_ResetYaw(&hi2c2);
 					TURNING = ON;
+					TURNSMOOTH = OFF;
 				}
 			}
 			break;
 		case MODE_SOLVE_MAZE:
 			if (MODESTARTED == OFF){
 				robotAction = ACTION_STANDBY;
+				MPU6050_ResetYaw(&hi2c2);
 			}else{
-				//turning180();
+				robotAction = ACTION_CRUCE_X; // SACAR, SOLO PARA TEST
+				if (abs(myMPU.Yaw) < 90){
+					myMotor[LEFT].pow = 30;
+					myMotor[RIGHT].pow = -30;
+				} else {
+					myMotor[LEFT].pow = 0;
+					myMotor[RIGHT].pow = 0;
+				}
+				Set_Power_Motor(&htim4, &myMotor[LEFT], &myMotor[RIGHT], myMotor[LEFT].pow, myMotor[RIGHT].pow);
 			}
 			break;
 		default:
@@ -681,6 +719,7 @@ void modeTask(){
 void shortPress(){
 	mode++;
 	MODESTARTED = OFF, TURNING = OFF;
+	CHOSESIDE = OFF; TURNRIGHT = OFF; TURNSMOOTH = OFF;
 
 	if (mode >= maxMODES)
 		mode = modeIDLE;
@@ -701,25 +740,31 @@ void advance(){
 	int8_t correction = 0;
 	const int8_t DIST_WALL_REF = 50; // 50 mm DE DISTANCIA REFERENCIA HACIA LA PARED
 	const int8_t WALL_DEADZONE = 5; // 5 mm COMO DISTANCIA MINIMA PARA LA CORRECCION
+	int8_t currentBaseSpeed, minSpeed;
 
 	int16_t minFrontDist = (IR_FRONT_1 < IR_FRONT_2) ? IR_FRONT_1 : IR_FRONT_2;
 
 	if (PARED_IZQUIERDA && PARED_DERECHA){
 		// CASO 1: PARED IZQUIERDA Y DERECHA, EL ERROR ES LA DIFERENCIA ENTRE LOS SENSORES LATERALES
-		errorWall = IR_IZQ - IR_DER; // 60 izq, 40 der -> + 20
+		errorWall = IR_DER - IR_IZQ;
 	}
-	else if (PARED_IZQUIERDA && !PARED_DERECHA){
+	else if ((PARED_IZQUIERDA && DIAG_IZQUIERDA) && (!DIAG_DERECHA || !PARED_DERECHA)){
 		// CASO 2: PARED IZQUIERDA PRESENTE, PARED DERECHA AUSENTE: PARED IZQUIERDA COMO REFERENCIA
-		errorWall = DIST_WALL_REF - IR_IZQ;
+		errorWall = (DIST_WALL_REF - IR_IZQ)*2; //(50-45)*2 = +10 -> corrige hacia la derecha
 	}
-	else if (!PARED_IZQUIERDA && PARED_DERECHA){
+	else if ((!DIAG_IZQUIERDA || !PARED_IZQUIERDA) && (PARED_DERECHA && DIAG_DERECHA)){
 		// CASO 3: PARED IZQUIERDA AUSENTE, PARED DERECHA PRESENTE: PARED DERECHA COMO REFERENCIA
-		errorWall = IR_DER - DIST_WALL_REF;
+		errorWall = (IR_DER - DIST_WALL_REF)*2;
+	} else if (!PARED_IZQUIERDA && !PARED_DERECHA){
+		// CASO 4: PAREDES AUSENTES A LOS COSTADOS, ORIENTACION PREVIA COMO REFERENCIA
+		errorWall = 0;
+		//errorWall = IR_DIAG_DER - IR_DIAG_IZQ; // ESTO HACE QUE GIRE SUAVE
 	}
 
-	if (abs(errorWall) > WALL_DEADZONE){
+	if (abs(errorWall) >= WALL_DEADZONE){
 		// LA DIFERENCIA ENTRE LA MEDICION Y LA CORRECCION ES SIGNIFICANTE, HAY CORRECCION PID
 		correction = PID_Compute(&PID_Navigation, errorWall);
+		// Si correction es mayor a 0, el robot tiende a la derecha
 	}
 	else{
 		// LA DIFERENCIA ENTRE LA MEDICION Y LA CORRECCION NO ES SIGNIFICANTE, NO HAY CORRECCION PID
@@ -729,12 +774,20 @@ void advance(){
 
 	testds = correction;
 
-	myMotor[LEFT].pow = PID_Navigation.base + correction;
-	myMotor[RIGHT].pow = PID_Navigation.base - correction;
-
-	if ((DIAG_IZQUIERDA == OFF)||(DIAG_DERECHA == OFF)||(minFrontDist < 70)){
-		myMotor[LEFT].pow *= 0.8;
-		myMotor[RIGHT].pow *= 0.8;
+	if (minFrontDist <= 100){
+		minSpeed = PID_Navigation.base * (50/100);
+		if (minFrontDist <= myADC.threshold[FRONT_1]){
+			// Potencia al minimo si esta por debajo del threshold
+			currentBaseSpeed = minSpeed;
+		} else {
+			// Ecuación: Vel = VelMin + (VelMax - VelMin) * (Dist - Umbral) / (100 - Umbral)
+			currentBaseSpeed = minSpeed + ((PID_Navigation.base - minSpeed) * (minFrontDist - myADC.threshold[FRONT_1])) / (100 - myADC.threshold[FRONT_1]);
+		}
+		myMotor[LEFT].pow = currentBaseSpeed + correction;
+		myMotor[RIGHT].pow = currentBaseSpeed - correction;
+	} else {
+		myMotor[LEFT].pow = PID_Navigation.base + correction;
+		myMotor[RIGHT].pow = PID_Navigation.base - correction;
 	}
 
 	Set_Power_Motor(&htim4, &myMotor[LEFT], &myMotor[RIGHT], myMotor[LEFT].pow, myMotor[RIGHT].pow);
@@ -744,24 +797,35 @@ void advance(){
 void turning180(){
 	int32_t errorAng = 0;
 	int8_t correction = 0;
-	const int8_t ANG_DEADZONE = 7; // 5 dps COMO DIFERENCIA MINIMA PARA LA CORRECCION DE LA VELOCIDAD
+	const int8_t ANG_DEADZONE = 2; // 2 dps COMO DIFERENCIA MINIMA PARA LA CORRECCION DE LA VELOCIDAD
 	static uint8_t brake_counter = 0; // NUEVO: Contador para el freno
+	//int16_t minFrontDist = (IR_FRONT_1 < IR_FRONT_2) ? IR_FRONT_1 : IR_FRONT_2;
 
 	// Si estamos en fase de frenado, esperar a que el chasis se detenga
 	if (brake_counter > 0) {
 		brake_counter++;
-		if (brake_counter > 5) { // Esperar 5 ciclos = 50 milisegundos
+		if (brake_counter > 4) { // Esperar 5 ciclos = 50 milisegundos
 			brake_counter = 0;
 
 			PID_Reset(&PID_Navigation);
-			robotAction = ACTION_CRUCE_CIEGO; // AHORA SÍ, salir ciego hacia adelante
+			robotAction = ACTION_CRUCE_CIEGO; // AHORA S�?, salir ciego hacia adelante
 		}
 		return; // Terminar la función aquí para no hacer nada más
 	}
+	if (CHOSESIDE == OFF){
+		if (IR_IZQ <= IR_DER)
+			TURNRIGHT = ON;
+		else
+			TURNRIGHT = OFF;
+		CHOSESIDE = ON;
+	}
 
-	errorAng = myMPU.Yaw - 180;
+	if (TURNRIGHT == ON)
+		errorAng = 180 + myMPU.Yaw;
+	else
+		errorAng = 180 - myMPU.Yaw;
 
-	if (abs(errorAng) > ANG_DEADZONE){
+	if (abs(errorAng) >= ANG_DEADZONE){
 		// LA DIFERENCIA ENTRE LA MEDICION Y LA CORRECCION ES SIGNIFICANTE, HAY CORRECCION PID
 		correction = PID_Compute(&PID_U_Turn, errorAng);
 	} else {
@@ -772,10 +836,17 @@ void turning180(){
 
 	testds = correction;
 
-	if (abs(myMPU.Yaw) <= 170) {
-		myMotor[LEFT].pow = -PID_U_Turn.base;// + correction;
-		myMotor[RIGHT].pow = PID_U_Turn.base;// - correction;
+	if (abs(myMPU.Yaw) < 180) {
+		if (TURNRIGHT == ON){
+			myMotor[LEFT].pow = PID_U_Turn.base + correction;
+			myMotor[RIGHT].pow = -PID_U_Turn.base - correction;
+		} else {
+			myMotor[LEFT].pow = -PID_U_Turn.base + correction;
+			myMotor[RIGHT].pow = PID_U_Turn.base - correction;
+		}
 		Set_Power_Motor(&htim4, &myMotor[LEFT], &myMotor[RIGHT], myMotor[LEFT].pow, myMotor[RIGHT].pow);
+		if ((abs(myMPU.Yaw) > 150) && (IR_DER <= 50 && IR_IZQ <= 50))
+			myMPU.Yaw = 180;
 	} else {
 		//PID_Reset(&PID_Navigation);
 		//robotAction = ACTION_CRUCE_CIEGO; // EMPALME CON NUEVO CAMINO
@@ -790,15 +861,29 @@ void turning180(){
 void turning90(uint8_t side){
 	int32_t errorAng = 0;
 	int8_t correction = 0;
-	//const int16_t REF_ANG_SPEED = 120; // 120 dps COMO VELOCIDAD DE REFERENCIA PARA LOS GIROS
-	const int8_t ANG_DEADZONE = 7; // 5 dps COMO DIFERENCIA MINIMA PARA LA CORRECCION DE LA VELOCIDAD
+	const int8_t ANG_DEADZONE = 2; // 5 dps COMO DIFERENCIA MINIMA PARA LA CORRECCION DE LA VELOCIDAD
+	static uint8_t brake_counter = 0; // NUEVO: Contador para el freno
+	//uint8_t PARED_IZQ = (IR_IZQ < myADC.threshold[LEFT_SENSOR]);
+	//uint8_t PARED_DER = (IR_DER < myADC.threshold[RIGHT_SENSOR]);
+
+	// Si estamos en fase de frenado, esperar a que el chasis se detenga
+	if (brake_counter > 0) {
+		brake_counter++;
+		if (brake_counter > 4) { // Esperar 5 ciclos = 50 milisegundos
+			brake_counter = 0;
+
+			PID_Reset(&PID_Navigation);
+			robotAction = ACTION_CRUCE_CIEGO; // AHORA S�?, salir ciego hacia adelante
+		}
+		return; // Terminar la función aquí para no hacer nada más
+	}
 
 	if (side == LEFT_SIDE)
-		errorAng = myMPU.Yaw - 90;
+		errorAng = 90 - myMPU.Yaw;
 	else if (side == RIGHT_SIDE)
-		errorAng = myMPU.Yaw + 90;
+		errorAng = 90 + myMPU.Yaw;
 
-	if (abs(errorAng) > ANG_DEADZONE){
+	if (abs(errorAng) >= ANG_DEADZONE){
 		// LA DIFERENCIA ENTRE LA MEDICION Y LA CORRECCION ES SIGNIFICANTE, HAY CORRECCION PID
 		correction = PID_Compute(&PID_Turn, errorAng);
 	} else {
@@ -809,19 +894,21 @@ void turning90(uint8_t side){
 
 	testds = correction;
 
-	if (abs(myMPU.Yaw) <= 85){
+	if (abs(myMPU.Yaw) < 90){
 		if (side == LEFT_SIDE){ // logica inversa
-			myMotor[LEFT].pow = PID_Turn.base;// + correction;
-			myMotor[RIGHT].pow = -PID_Turn.base;// - correction;
+			myMotor[LEFT].pow = -PID_Turn.base + correction;
+			myMotor[RIGHT].pow = PID_Turn.base - correction;
+			if (IR_IZQ > 100 && IR_DER >= 45 && IR_FRONT_1 > 100 && abs(myMPU.Yaw) > 65)
+				myMPU.Yaw = 90;
 		} else if (side == RIGHT_SIDE){
-			myMotor[LEFT].pow = -PID_Turn.base;// - correction;
-			myMotor[RIGHT].pow = PID_Turn.base;// + correction;
+			myMotor[LEFT].pow = PID_Turn.base + correction;
+			myMotor[RIGHT].pow = -PID_Turn.base - correction;
+			if (IR_IZQ >= 45 && IR_DER > 100 && IR_FRONT_2 > 100 && abs(myMPU.Yaw) > 65)
+				myMPU.Yaw = -90;
 		}
 		Set_Power_Motor(&htim4, &myMotor[LEFT], &myMotor[RIGHT], myMotor[LEFT].pow, myMotor[RIGHT].pow);
 	} else {
-		PID_Reset(&PID_Navigation);
-		robotAction = ACTION_CRUCE_CIEGO; // EMPALME CON NUEVO CAMINO
-
+		brake_counter = 1; // INICIAR SECUENCIA DE FRENADO
 		myMotor[LEFT].pow = 0;
 		myMotor[RIGHT].pow = 0;
 		Set_Power_Motor(&htim4, &myMotor[LEFT], &myMotor[RIGHT], 0, 0);
@@ -834,8 +921,10 @@ void advanceBlind(){
 	const int8_t DIST_WALL_REF = 50; // 50 mm DE DISTANCIA REFERENCIA HACIA LA PARED
 	const int8_t WALL_DEADZONE = 5; // 5 mm COMO DISTANCIA MINIMA PARA LA CORRECCION
 	static uint8_t counterIR7 = 0;
-	uint8_t PARED_IZQ = (IR_IZQ < myADC.threshold[LEFT_SIDE]);
-	uint8_t PARED_DER = (IR_DER < myADC.threshold[RIGHT_SIDE]);
+	uint8_t PARED_IZQ = (IR_IZQ <= myADC.threshold[LEFT_SIDE]);
+	uint8_t PARED_DER = (IR_DER <= myADC.threshold[RIGHT_SIDE]);
+	uint8_t DIAG_IZQ = (IR_DIAG_IZQ <= myADC.threshold[FRONT_LEFT]);
+	uint8_t DIAG_DER = (IR_DIAG_DER <= myADC.threshold[FRONT_RIGHT]);
 
 	if (IR_GROUND_BACK == myADC.threshold[GROUND_BACK]){
 		counterIR7++;
@@ -850,20 +939,22 @@ void advanceBlind(){
 		counterIR7 = 0;
 	}
 
-	if (PARED_IZQ && PARED_DER){
-		// CASO 1: PARED IZQUIERDA Y DERECHA, EL ERROR ES LA DIFERENCIA ENTRE LOS SENSORES LATERALES
-		errorWall = IR_IZQ - IR_DER;
-	}
-	else if (PARED_IZQ && !PARED_DER){
-		// CASO 2: PARED IZQUIERDA PRESENTE, PARED DERECHA AUSENTE: PARED IZQUIERDA COMO REFERENCIA
-		errorWall = DIST_WALL_REF - IR_IZQ;
-	}
-	else if (!PARED_IZQ && PARED_DER){
-		// CASO 3: PARED IZQUIERDA AUSENTE, PARED DERECHA PRESENTE: PARED DERECHA COMO REFERENCIA
-		errorWall = IR_DER - DIST_WALL_REF;
+	if ((DIAG_IZQ || DIAG_DER)&&(PARED_IZQ && PARED_DER)){
+		// Caso 1: paredes presentes, al menos una diagonal presente
+		errorWall = IR_DER - IR_IZQ;
+	} else if ((DIAG_IZQ)&&(PARED_IZQ && !PARED_DER)){
+		// Caso 2: pared derecha ausente, tengo pared a la izquierda
+		errorWall = (DIST_WALL_REF - IR_IZQ)*2;
+	} else if ((DIAG_DER)&&(!PARED_IZQ && PARED_DER)){
+		// Caso 3: pared izquierda ausente, tengo pared a la izquierda
+		errorWall = (IR_DER - DIST_WALL_REF)*2;
+	} else if ((!PARED_IZQ && !PARED_DER)){
+		// Caso 4: paredes ausentes, sin referencia de las diagonales
+		errorWall = 0;
 	}
 
-	if (abs(errorWall) > WALL_DEADZONE){
+
+	if (abs(errorWall) >= WALL_DEADZONE){
 		// LA DIFERENCIA ENTRE LA MEDICION Y LA CORRECCION ES SIGNIFICANTE, HAY CORRECCION PID
 		correction = PID_Compute(&PID_Navigation, errorWall);
 	}
@@ -878,32 +969,30 @@ void advanceBlind(){
 }
 
 void scanRoute(){
-	if (IR_DER < myADC.threshold[RIGHT_SIDE])	// PARED DERECHA
+	if (IR_DER <= myADC.threshold[RIGHT_SIDE])	// PARED DERECHA
 		PARED_DERECHA = ON;
 	else
 		PARED_DERECHA = OFF;
 
-	if (IR_IZQ < myADC.threshold[LEFT_SIDE])	// PARED IZQUIERDA
+	if (IR_IZQ <= myADC.threshold[LEFT_SIDE])	// PARED IZQUIERDA
 		PARED_IZQUIERDA = ON;
 	else
 		PARED_IZQUIERDA = OFF;
 
-	if (IR_DIAG_DER < myADC.threshold[FRONT_RIGHT])	// DIAGONAL DERECHA
+	if (IR_DIAG_DER <= myADC.threshold[FRONT_RIGHT])	// DIAGONAL DERECHA
 		DIAG_DERECHA = ON;
 	else
 		DIAG_DERECHA = OFF;
 
-
-	if (IR_DIAG_IZQ < myADC.threshold[FRONT_LEFT])	// DIAGONAL IZQUIERDA
+	if (IR_DIAG_IZQ <= myADC.threshold[FRONT_LEFT])	// DIAGONAL IZQUIERDA
 		DIAG_IZQUIERDA = ON;
 	else
 		DIAG_IZQUIERDA = OFF;
 
-	if ((IR_FRONT_1 < myADC.threshold[FRONT_1])||(IR_FRONT_2 < myADC.threshold[FRONT_2])){	// PARED DELANTERA
-		PARED_DELANTERA_1 = ON;
-	}
+	if (IR_FRONT_1 < myADC.threshold[FRONT_1] || IR_FRONT_2 <= myADC.threshold[FRONT_2])	// PARED DELANTERA
+		PARED_DELANTERA = ON;
 	else
-		PARED_DELANTERA_1 = OFF;
+		PARED_DELANTERA = OFF;
 
 	if (IR_GROUND_FRONT == myADC.threshold[GROUND_FRONT])	// PISO DELANTERO
 		PISO_ADELANTE = ON;
@@ -937,6 +1026,24 @@ void robotTask(){
 			break;
 		case ACTION_CRUCE_CIEGO:
 			advanceBlind();
+			break;
+		case ACTION_CRUCE_T:
+			static uint8_t toggleBit = 0;
+			toggleBit ^= 1; // XOR con 1 -> se invierte cada ciclo
+			if (toggleBit == ON){ // SI ES 1, GIRA A LA IZQUIERDA
+				robotAction = ACTION_GIRO_IZQUIERDA;
+			} else {	// SI ES 0, GIRA A LA DERECHA
+				robotAction = ACTION_GIRO_DERECHA;
+			}
+			MPU6050_ResetYaw(&hi2c2);
+			break;
+		case ACTION_CRUCE_L:
+
+			MPU6050_ResetYaw(&hi2c2);
+			break;
+		case ACTION_CRUCE_J:
+
+			MPU6050_ResetYaw(&hi2c2);
 			break;
 		default:
 			break;
@@ -1006,9 +1113,9 @@ int main(void)
 
   Infrared_Init(&myADC);
 
-  PID_Init(&PID_Navigation, 70, 0, 50, 30, 40); // VELOCIDAD MAX +/-70%, VELOCIDAD BASE 40%
-  PID_Init(&PID_Turn, 50, 0, 50, 30, 40); // VELOCIDAD MAX +/-70%, VELOCIDAD BASE 40%
-  PID_Init(&PID_U_Turn, 50, 0, 40, 30, 40); // VELOCIDAD MAX +/-70%, VELOCIDAD BASE 40%
+  PID_Init(&PID_Navigation, 50, 0, 500, 20, 35); // VELOCIDAD MAX +/-55%, VELOCIDAD BASE 35% (50/0/80)
+  PID_Init(&PID_Turn, 1, 0, 5, 15, 30); // VELOCIDAD MAX +/-35%, VELOCIDAD BASE 25% (1/2/2)
+  PID_Init(&PID_U_Turn, 1, 0, 5, 15, 30); // VELOCIDAD MAX +/-35%, VELOCIDAD BASE 25% (1/3/2)
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -1076,10 +1183,6 @@ int main(void)
 	  if (!time1000ms)
 		  Do1000ms();
 
-	  Alive_Task();
-
-	  Button_Task(&myButton);
-
 	  Communication_Task();
 
 	  ESP01_Task();
@@ -1089,8 +1192,6 @@ int main(void)
 	  UNERBUS_Task(&unerbusPC);
 
 	  I2C_Tasks();
-
-	  modeTask();
   }
   /* USER CODE END 3 */
 }

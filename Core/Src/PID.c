@@ -7,7 +7,7 @@
 
 #include "PID.h"
 
-void PID_Init(_sPID *pid, int32_t Kp, int32_t Ki, int32_t Kd, int32_t min_max, int8_t base) {
+void PID_Init(_sPID *pid, uint16_t Kp, uint16_t Ki, uint16_t Kd, int32_t min_max, uint8_t base) {
     pid->Kp = Kp;
     pid->Ki = Ki;
     pid->Kd = Kd;

@@ -11,18 +11,17 @@
 #include <stdint.h>
 
 #define ADC_CHANNELS			8
-#define SIZE_BUF_ADC			64
-#define FILTER_SIZE				16
+#define SIZE_BUF_ADC			32
 #define LOOKUP_SIZE				30//20
 
-#define RIGHT_SENSOR			0
-#define RIGHT_DIAGONAL_SENSOR	1
-#define FRONT_RIGHT_SENSOR		2
-#define FRONT_UNDER_SENSOR		3
-#define FRONT_LEFT_SENSOR		4
-#define LEFT_DIAGONAL_SENSOR	5
-#define LEFT_SENSOR				6
-#define REAR_UNDER_SENSOR		7
+#define LEFT_SIDE				6
+#define RIGHT_SIDE				0
+#define FRONT_LEFT				5
+#define FRONT_RIGHT				1
+#define FRONT_1					2
+#define FRONT_2					4
+#define GROUND_BACK				7
+#define GROUND_FRONT			3
 
 typedef struct{
 	//uint8_t iwBufADC, irBufADC;

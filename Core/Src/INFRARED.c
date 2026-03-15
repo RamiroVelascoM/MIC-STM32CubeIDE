@@ -10,20 +10,20 @@
 const uint8_t mm_reference[] = {5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140, 145, 150};
 
 void Infrared_Init(InfraredHandle_s *infraredData){
-	//uint16_t aux[LOOKUP_SIZE] = {3943, 3929, 3839, 2820, 2047, 1547, 1136, 1026, 758, 683, 554, 542, 476, 403, 363, 325, 260, 230, 205};
-	uint16_t aux[LOOKUP_SIZE] = {3840, 3835, 3825, 3650, 3300, 2560, 1960, 1530, 1200, 1000, 870, 750, 600, 520, 450, 400, 350, 325, 275, 250, 208, 169, 145, 135, 120, 106, 80, 65, 42, 30};
+	uint16_t table[LOOKUP_SIZE] = {3840, 3835, 3825, 3650, 3300, 2560, 1960, 1530, 1200, 1000, 870, 750, 600, 520, 450, 400, 350, 325, 275, 250, 208, 169, 145, 135, 120, 106, 80, 65, 42, 30};
+	//uint16_t table[LOOKUP_SIZE] = {4023, 4003, 3938, 3485, 2600, 2115, 1770, 1520, 1350, 1200, 1110, 995, 920, 860, 800, 740, 695, 650, 610, 575, 545, 515, 495, 470, 445, 425, 400, 385, 370, 353};
 
 	for(uint8_t i=0; i<LOOKUP_SIZE; i++)
-		infraredData->lookUp[i] = aux[i];
+		infraredData->lookUp[i] = table[i];
 
-	infraredData->threshold[RIGHT_SENSOR] = 100;
-	infraredData->threshold[RIGHT_DIAGONAL_SENSOR] = 110;
-	infraredData->threshold[FRONT_RIGHT_SENSOR] = 55;
-	infraredData->threshold[FRONT_UNDER_SENSOR] = 1;
-	infraredData->threshold[FRONT_LEFT_SENSOR] = 55;
-	infraredData->threshold[LEFT_DIAGONAL_SENSOR] = 110;
-	infraredData->threshold[LEFT_SENSOR] = 100;
-	infraredData->threshold[REAR_UNDER_SENSOR] = 1;
+	infraredData->threshold[RIGHT_SIDE] = 100;
+	infraredData->threshold[FRONT_RIGHT] = 120;
+	infraredData->threshold[FRONT_1] = 50;
+	infraredData->threshold[GROUND_FRONT] = 1;
+	infraredData->threshold[FRONT_2] = 50;
+	infraredData->threshold[FRONT_LEFT] = 120;
+	infraredData->threshold[LEFT_SIDE] = 100;
+	infraredData->threshold[GROUND_BACK] = 1;
 }
 
 void Infrared_Filter(InfraredHandle_s *infraredData){
@@ -58,7 +58,7 @@ void Infrared_To8Bits(InfraredHandle_s *infraredData){
 
 void Infrared_Convert(InfraredHandle_s *infraredData){
     for (uint8_t channel = 0; channel < ADC_CHANNELS; channel++) {
-    	if (channel != FRONT_UNDER_SENSOR && channel != REAR_UNDER_SENSOR){
+    	if (channel != GROUND_FRONT && channel != GROUND_BACK){
 			for(uint8_t j = 0; j < LOOKUP_SIZE; j++){
 				if(infraredData->filteredSamples[channel] >= infraredData->lookUp[j]){
 					infraredData->millimeterSamples[channel] = (j + 1) * 5;

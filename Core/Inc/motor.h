@@ -26,6 +26,4 @@ void Motors_Init(_sMOTOR *motorL, _sMOTOR *motorR);
 
 void Set_Power_Motor(TIM_HandleTypeDef *htim, _sMOTOR *motorL, _sMOTOR *motorR, int8_t powLEFT, int8_t powRIGHT);
 
-void Set_PWM_Motor(TIM_HandleTypeDef *htim, _sMOTOR *motorL, _sMOTOR *motorR, int16_t pwmLEFT, int16_t pwmRIGHT);
-
 #endif  // _motor_H

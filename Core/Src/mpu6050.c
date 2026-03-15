@@ -46,6 +46,7 @@ void MPU6050_Init(I2C_HandleTypeDef *hi2c) {
 		myMPU.OffsetGyrX = 0, myMPU.OffsetGyrY = 0, myMPU.OffsetGyrZ = 0;
 		myMPU.RawAccX = 0, myMPU.RawAccY = 0, myMPU.RawAccZ = 0;
 		myMPU.RawGyrX = 0, myMPU.RawGyrY = 0, myMPU.RawGyrZ = 0;
+		myMPU.Yaw = 0, myMPU.Yaw_x10 = 0, myMPU.rawYaw = 0;
 
 		for (uint8_t i=0; i<14; i++){
 			bufData[i] = 0;

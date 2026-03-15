@@ -32,7 +32,7 @@
 #define MPU_PID_SCALE			10
 #define MPU_GYRO_SCALAR			10 		// SENSIBILIDAD / RESOLUCION -> (65536) / (65.5*100
 #define MPU_TIMEOUT				500		//HAL_MAX_DELAY
-#define GYRO_THRESHOLD			50
+#define GYRO_THRESHOLD			400
 #define GYRO_SENSITIVITY		65536
 
 typedef struct {
