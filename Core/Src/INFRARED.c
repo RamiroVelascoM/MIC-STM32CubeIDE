@@ -17,11 +17,11 @@ void Infrared_Init(InfraredHandle_s *infraredData){
 		infraredData->lookUp[i] = table[i];
 
 	infraredData->threshold[RIGHT_SIDE] = 100;
-	infraredData->threshold[FRONT_RIGHT] = 120;
-	infraredData->threshold[FRONT_1] = 50;
+	infraredData->threshold[FRONT_RIGHT] = 125;
+	infraredData->threshold[FRONT_1] = 100;
 	infraredData->threshold[GROUND_FRONT] = 1;
-	infraredData->threshold[FRONT_2] = 50;
-	infraredData->threshold[FRONT_LEFT] = 120;
+	infraredData->threshold[FRONT_2] = 100;
+	infraredData->threshold[FRONT_LEFT] = 125;
 	infraredData->threshold[LEFT_SIDE] = 100;
 	infraredData->threshold[GROUND_BACK] = 1;
 }
@@ -59,12 +59,31 @@ void Infrared_To8Bits(InfraredHandle_s *infraredData){
 void Infrared_Convert(InfraredHandle_s *infraredData){
     for (uint8_t channel = 0; channel < ADC_CHANNELS; channel++) {
     	if (channel != GROUND_FRONT && channel != GROUND_BACK){
+    		/*
 			for(uint8_t j = 0; j < LOOKUP_SIZE; j++){
 				if(infraredData->filteredSamples[channel] >= infraredData->lookUp[j]){
 					infraredData->millimeterSamples[channel] = (j + 1) * 5;
 					break;
 				}
 			}
+			*/
+    		for(uint8_t j = 1; j < LOOKUP_SIZE; j++){
+				if(infraredData->filteredSamples[channel] >= infraredData->lookUp[j]){
+					uint16_t adc0 = infraredData->lookUp[j-1];
+					uint16_t adc1 = infraredData->lookUp[j];
+
+					uint8_t dist0 = (j * 5);
+					uint8_t dist1 = (j + 1) * 5;
+
+					uint32_t deltaDist = dist1 - dist0;
+					uint32_t deltaAdcTotal = adc0 - adc1;
+					uint32_t deltaAdcParcial = adc0 - infraredData->filteredSamples[channel];
+
+					infraredData->millimeterSamples[channel] = dist0 + ((deltaDist * deltaAdcParcial) / deltaAdcTotal);
+					break;
+				}
+			}
+
     	} else {
     		if (infraredData->filteredSamples[channel] <= 3800)
 				infraredData->millimeterSamples[channel] = 1;

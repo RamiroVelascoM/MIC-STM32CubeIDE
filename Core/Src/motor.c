@@ -49,3 +49,63 @@ void Set_Power_Motor(TIM_HandleTypeDef *htim, _sMOTOR *motorL, _sMOTOR *motorR, 
 	}
 }
 
+void Set_RampPower_Motor(TIM_HandleTypeDef *htim, _sMOTOR *motorL, _sMOTOR *motorR, int8_t powLEFT, int8_t powRIGHT)
+{
+    // Variables estáticas: mantienen su valor entre llamadas a la función
+    static int8_t rampL = 0;
+    static int8_t rampR = 0;
+
+    // --- RAMPA MOTOR IZQUIERDO ---
+    if (rampL < powLEFT) {
+        rampL += RAMP_STEP;
+        if (rampL > powLEFT) rampL = powLEFT;
+    }
+    else if (rampL > powLEFT) {
+        rampL -= RAMP_STEP;
+        if (rampL < powLEFT) rampL = powLEFT;
+    }
+
+    // --- RAMPA MOTOR DERECHO ---
+    if (rampR < powRIGHT) {
+        rampR += RAMP_STEP;
+        if (rampR > powRIGHT) rampR = powRIGHT;
+    }
+    else if (rampR > powRIGHT) {
+        rampR -= RAMP_STEP;
+        if (rampR < powRIGHT) rampR = powRIGHT;
+    }
+
+    // --- ACTUALIZACIÓN DE LA ESTRUCTURA (Para que el main sepa la potencia real) ---
+    motorL->pow = rampL;
+    motorR->pow = rampR;
+
+    // --- APLICACIÓN DE PWM (Usando las variables rampL y rampR) ---
+
+    // Motor Izquierdo
+    if (rampL < 0){
+        motorL->dir = DIR_BACKWARDS;
+        motorL->pulses = (-rampL) * 100;
+        __HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_4, motorL->pulses);
+        __HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_3, 0);
+    }
+    else {
+        motorL->dir = DIR_FORWARD;
+        motorL->pulses = rampL * 100;
+        __HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_4, 0);
+        __HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_3, motorL->pulses);
+    }
+
+    // Motor Derecho
+    if (rampR < 0){
+        motorR->dir = DIR_BACKWARDS;
+        motorR->pulses = (-rampR) * 100;
+        __HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_2, motorR->pulses);
+        __HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_1, 0);
+    }
+    else {
+        motorR->dir = DIR_FORWARD;
+        motorR->pulses = rampR * 100;
+        __HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_2, 0);
+        __HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_1, motorR->pulses);
+    }
+}

@@ -11,46 +11,36 @@
  *
  */
 
-#ifndef _display_H
-#define _display_H
+#ifndef _DISPLAY_H
+#define _DISPLAY_H
 
 #include "stm32f1xx_hal.h"
 #include "fonts.h"
 #include <stdio.h>
-// I2c address
+#include <string.h>
+
+/* --- Configuraciones de Hardware --- */
 #ifndef Display_I2C_ADDR
 #define Display_I2C_ADDR        0x78
-#endif // Display_I2C_ADDR
+#endif
 
-// Display width in pixels
 #ifndef Display_WIDTH
 #define Display_WIDTH           128
-#endif // Display_WIDTH
+#endif
 
-// Display LCD height in pixels
 #ifndef Display_HEIGHT
 #define Display_HEIGHT          64
-#endif // Display_HEIGHT
+#endif
 
-#ifndef Display_COM_LR_REMAP
-#define Display_COM_LR_REMAP    0
-#endif // Display_COM_LR_REMAP
+#define DISPLAY_BUFFER_SIZE     (Display_WIDTH * Display_HEIGHT / 8)
 
-#ifndef Display_COM_ALTERNATIVE_PIN_CONFIG
-#define Display_COM_ALTERNATIVE_PIN_CONFIG    1
-#endif // Display_COM_ALTERNATIVE_PIN_CONFIG
-
-/**
- * SCREEN COLORS
- */
+/* --- Definiciones de Colores --- */
 typedef enum {
-    Black = 0x00,   // Black color, no pixel
-    White = 0x01,   // Pixel is set. Color depends on LCD
+    Black = 0x00,   // Píxel apagado
+    White = 0x01    // Píxel encendido
 } Display_COLOR;
 
-/**
- * DISPLAY VARIABLES
- */
+/* --- Estructuras de Control --- */
 typedef struct {
     uint16_t CurrentX;
     uint16_t CurrentY;
@@ -58,7 +48,10 @@ typedef struct {
     uint8_t Initialized;
 } Display_t;
 
-typedef struct{
+/**
+ * @brief Estructura de datos específicos para la aplicación (Basado en Ramiro)
+ */
+typedef struct {
 	uint8_t hs;
 	uint8_t min;
 	uint8_t via;
@@ -66,29 +59,30 @@ typedef struct{
 	char dateText[8];
 	char sourceText[6];
 	char lowerText[8];
-}_sDisplayData;
+} _sDisplayData;
 
-/**
- * FUNCTION DEFINITIONS
- */
+/* --- Funciones de Inicialización y Control --- */
 uint8_t Display_Init(I2C_HandleTypeDef *hi2c);
-
 uint8_t Display_UpdateScreen(I2C_HandleTypeDef *hi2c);
+void    Display_ON(I2C_HandleTypeDef *hi2c);
+void    Display_OFF(I2C_HandleTypeDef *hi2c);
+void    Display_Fill(Display_COLOR color);
+void    Display_Clear(void);
 
-void Display_Fill(Display_COLOR color);
-
+/* --- Funciones de Dibujo Gráfico (Basado en Agustín) --- */
 void Display_DrawPixel(uint8_t x, uint8_t y, Display_COLOR color);
+void Display_DrawLine(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, Display_COLOR c);
+void Display_DrawRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, Display_COLOR c);
+void Display_DrawFilledRectangle(uint16_t w, uint16_t h, Display_COLOR c);
+void Display_DrawBitmap(int16_t w, int16_t h, const unsigned char* bitmap);
 
-char Display_WriteChar(char ch, FontDef Font, Display_COLOR color);
-
-char Display_WriteString(const char* str, FontDef Font, Display_COLOR color);
-
+/* --- Funciones de Texto --- */
 void Display_SetCursor(uint8_t x, uint8_t y);
-
+char Display_WriteChar(char ch, FontDef Font, Display_COLOR color);
+char Display_WriteString(const char* str, FontDef Font, Display_COLOR color);
 void Display_InvertColors(void);
 
-void Display_DrawBitmap(uint8_t W, uint8_t H, const uint8_t* pBMP);
-
+/* --- Funciones de Aplicación Específica --- */
 void Display_UpdateInfo(I2C_HandleTypeDef *hi2c, _sDisplayData *mySSD);
 
-#endif  // _display_H
+#endif

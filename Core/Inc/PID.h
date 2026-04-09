@@ -22,6 +22,9 @@ typedef struct {
     int32_t outputMin;
     int32_t outputMax;
     uint8_t base;
+
+    uint8_t velExt;
+    uint8_t velInt;
 } _sPID;
 
 void PID_Init(_sPID *pid, uint16_t Kp, uint16_t Ki, uint16_t Kd, int32_t min_max, uint8_t base);

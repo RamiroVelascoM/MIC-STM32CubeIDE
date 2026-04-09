@@ -15,6 +15,9 @@
 #define DIR_BACKWARDS	1
 #define MAX_PULSES		9999
 
+#define RAMP_STEP 5 // Ajusta: 1 es muy lento, 5 es muy rápido
+
+
 typedef struct{
 	int8_t pow;
 	uint8_t dir;
@@ -25,5 +28,7 @@ typedef struct{
 void Motors_Init(_sMOTOR *motorL, _sMOTOR *motorR);
 
 void Set_Power_Motor(TIM_HandleTypeDef *htim, _sMOTOR *motorL, _sMOTOR *motorR, int8_t powLEFT, int8_t powRIGHT);
+
+void Set_RampPower_Motor(TIM_HandleTypeDef *htim, _sMOTOR *motorL, _sMOTOR *motorR, int8_t powLEFT, int8_t powRIGHT);
 
 #endif  // _motor_H

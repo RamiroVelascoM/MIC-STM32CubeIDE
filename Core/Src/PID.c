@@ -17,6 +17,8 @@ void PID_Init(_sPID *pid, uint16_t Kp, uint16_t Ki, uint16_t Kd, int32_t min_max
     pid->outputMin = -min_max;
     pid->outputMax = min_max;
     pid->base = base;
+    pid->velExt = 0;
+    pid->velInt = 0;
 }
 
 int8_t PID_Compute(_sPID *pid, int32_t error){
@@ -33,7 +35,7 @@ int8_t PID_Compute(_sPID *pid, int32_t error){
         pid->integral += error;
     }
 
-    const int32_t INTEGRAL_LIMIT = 32000;
+    const int32_t INTEGRAL_LIMIT = (pid->outputMax * 100)/pid->Ki;//32000;
     if (pid->integral > INTEGRAL_LIMIT) {
         pid->integral = INTEGRAL_LIMIT;
     } else if (pid->integral < -INTEGRAL_LIMIT) {

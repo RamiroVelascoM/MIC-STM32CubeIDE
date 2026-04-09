@@ -1,4 +1,4 @@
 ../Core/Src/INFRARED.c:12:6:Infrared_Init	88	static
 ../Core/Src/INFRARED.c:29:6:Infrared_Filter	20	static
 ../Core/Src/INFRARED.c:51:6:Infrared_To8Bits	0	static
-../Core/Src/INFRARED.c:59:6:Infrared_Convert	28	static
+../Core/Src/INFRARED.c:59:6:Infrared_Convert	32	static

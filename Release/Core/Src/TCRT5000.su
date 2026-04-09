@@ -1,3 +1,0 @@
-../Core/Src/TCRT5000.c:16:6:TCRT5000_DynamicFilter	24	static
-../Core/Src/TCRT5000.c:28:6:TCRT5000_Init	16	static
-../Core/Src/TCRT5000.c:46:6:TCRT5000_ADCtoMm	20	static
