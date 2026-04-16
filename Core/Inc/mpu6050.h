@@ -32,7 +32,6 @@
 #define MPU_PID_SCALE			10
 #define MPU_GYRO_SCALAR			10 		// SENSIBILIDAD / RESOLUCION -> (65536) / (65.5*100
 #define MPU_TIMEOUT				500		//HAL_MAX_DELAY
-#define GYRO_THRESHOLD			500
 #define GYRO_SENSITIVITY		65500	//65536
 
 typedef struct {
@@ -64,6 +63,7 @@ typedef struct {
 	int16_t Yaw;
 	int32_t Yaw_x10;
 	int64_t rawYaw;
+	uint16_t thresholdGyro;
 }_sMPUData;
 
 
