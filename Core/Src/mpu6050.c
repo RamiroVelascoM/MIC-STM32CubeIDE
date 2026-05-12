@@ -47,7 +47,7 @@ void MPU6050_Init(I2C_HandleTypeDef *hi2c) {
 		myMPU.RawAccX = 0, myMPU.RawAccY = 0, myMPU.RawAccZ = 0;
 		myMPU.RawGyrX = 0, myMPU.RawGyrY = 0, myMPU.RawGyrZ = 0;
 		myMPU.Yaw = 0, myMPU.Yaw_x10 = 0, myMPU.rawYaw = 0;
-		myMPU.thresholdGyro = 600;
+		myMPU.thresholdGyro = 500;
 
 		for (uint8_t i=0; i<14; i++){
 			bufData[i] = 0;
@@ -115,14 +115,14 @@ void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c){
 	myMPU.buffer[10] = (uint8_t)(myMPU.GyrZ & 0xFF);
 	myMPU.buffer[11] = (uint8_t)((myMPU.GyrZ >> 8) & 0xFF);
 
-	myMPU.buffer[12] = (uint8_t)(myMPU.Yaw & 0xFF);
-	myMPU.buffer[13] = (uint8_t)((myMPU.Yaw >> 8) & 0xFF);
-
 	if (myMPU.GyrZ > myMPU.thresholdGyro || myMPU.GyrZ < -myMPU.thresholdGyro){
 		myMPU.rawYaw += (int64_t)(myMPU.GyrZ * 10); // 10 ms como dt ideal, pero no real
 	}
 	myMPU.Yaw = myMPU.rawYaw/GYRO_SENSITIVITY;
 	myMPU.Yaw_x10 = myMPU.Yaw*MPU_PID_SCALE;
+
+	myMPU.buffer[12] = (uint8_t)(myMPU.Yaw & 0xFF);
+	myMPU.buffer[13] = (uint8_t)((myMPU.Yaw >> 8) & 0xFF);
 }
 
 void MPU6050_ResetYaw(I2C_HandleTypeDef *hi2c){

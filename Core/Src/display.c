@@ -189,12 +189,16 @@ void Display_DrawBitmap(int16_t w, int16_t h, const unsigned char* bitmap) {
  */
 char Display_WriteChar(char ch, FontDef Font, Display_COLOR color) {
     uint32_t i, b, j;
+    // Verificar si el carácter cabe en la pantalla
     if (Display_WIDTH <= (Display.CurrentX + Font.FontWidth) || Display_HEIGHT <= (Display.CurrentY + Font.FontHeight))
         return 0;
-
+    // Recorrer cada fila de la fuente
     for (i = 0; i < Font.FontHeight; i++) {
+    	// Obtener los bits de la fila i para el caracter a escribir
         b = Font.data[(ch - 32) * Font.FontHeight + i];
         for (j = 0; j < Font.FontWidth; j++) {
+        	// Verificamos el bit j-ésimo (asumiendo que las fuentes están alineadas a la izquierda)
+			// Usamos 0x8000 porque tus datos en fonts.c son uint16_t
             if ((b << j) & 0x8000)
                 Display_DrawPixel(Display.CurrentX + j, (Display.CurrentY + i), color);
             else

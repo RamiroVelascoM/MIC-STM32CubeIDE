@@ -24,7 +24,7 @@ void PID_Init(_sPID *pid, uint16_t Kp, uint16_t Ki, uint16_t Kd, int32_t min_max
 int8_t PID_Compute(_sPID *pid, int32_t error){
     int32_t p_term = pid->Kp * error;
     int32_t i_term = pid->Ki * pid->integral;
-    int32_t d_term = pid->Kd * ((error - pid->prevError) / 10); // Actualizacion del PID cada 10 ms
+    int32_t d_term = pid->Kd * (error - pid->prevError);//((error - pid->prevError) / 10); // Actualizacion del PID cada 10 ms
 
     // Suma PID con escala para no usar flotantes con escala base de 100
     pid->output = (p_term + i_term + d_term) / 100;

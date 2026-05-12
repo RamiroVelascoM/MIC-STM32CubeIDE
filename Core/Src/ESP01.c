@@ -124,6 +124,8 @@ static uint8_t indexResponseChar = 0;
 //const char CIFSRSTAIP[] = "+CIFSR:STAIP\r";
 //const char CIFSRSTAMAC[] = "+CIFSR:STAMAC\r";
 
+#define ESP01_WATCHDOG_TIMEOUT  550  // 550 * 10ms = 5.5 segundos
+static uint32_t esp01ActivityTimer = ESP01_WATCHDOG_TIMEOUT;
 
 void ESP01_SetWIFI(const char *ssid, const char *password){
 	esp01ATSate = ESP01ATIDLE;
@@ -315,6 +317,15 @@ void ESP01_Timeout10ms(){
 
 	if(esp01TimeoutTxSymbol)
 		esp01TimeoutTxSymbol--;
+
+	if(esp01ATSate == ESP01ATCONNECTED) {
+		if(esp01ActivityTimer > 0) {
+			esp01ActivityTimer--;
+		}
+	} else {
+		// Si no estamos conectados, mantenemos el timer reseteado
+		esp01ActivityTimer = ESP01_WATCHDOG_TIMEOUT;
+	}
 }
 
 void ESP01_Task(){
@@ -342,7 +353,9 @@ int ESP01_IsHDRRST(){
 	return 0;
 }
 
-
+void ESP01_ResetActivity(void) {
+    esp01ActivityTimer = ESP01_WATCHDOG_TIMEOUT;
+}
 
 
 /* Private Functions */
@@ -740,6 +753,13 @@ static void ESP01DOConnection(){
 			esp01ATSate = ESP01ATCIPCLOSE;
 			break;
 		}
+		if(esp01ActivityTimer == 0) {
+			if(ESP01DbgStr != NULL)
+				ESP01DbgStr("+&DBGWATCHDOGRECONNECT\n");
+			esp01Flags.bit.UDPTCPCONNECTED = 0; // Marcamos como desconectado
+			esp01ATSate = ESP01ATCIPCLOSE;      // Forzamos el cierre y reinicio del ciclo
+			esp01ActivityTimer = ESP01_WATCHDOG_TIMEOUT;
+		}
 		esp01TimeoutTask = 0;
 		break;
 	}
@@ -792,7 +812,6 @@ static void ESP01ByteToBufTX(uint8_t value){
 	if(esp01iwTX == ESP01TXBUFAT)
 		esp01iwTX = 0;
 }
-
 
 /* END Private Functions*/
 

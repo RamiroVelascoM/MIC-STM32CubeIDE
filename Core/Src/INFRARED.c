@@ -17,11 +17,11 @@ void Infrared_Init(InfraredHandle_s *infraredData){
 		infraredData->lookUp[i] = table[i];
 
 	infraredData->threshold[RIGHT_SIDE] = 100;
-	infraredData->threshold[FRONT_RIGHT] = 130;
+	infraredData->threshold[FRONT_RIGHT] = 120;
 	infraredData->threshold[FRONT_1] = 100;
 	infraredData->threshold[GROUND_FRONT] = 1;
 	infraredData->threshold[FRONT_2] = 100;
-	infraredData->threshold[FRONT_LEFT] = 130;
+	infraredData->threshold[FRONT_LEFT] = 120;
 	infraredData->threshold[LEFT_SIDE] = 100;
 	infraredData->threshold[GROUND_BACK] = 1;
 }

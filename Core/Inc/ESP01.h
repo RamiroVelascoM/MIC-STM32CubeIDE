@@ -237,5 +237,10 @@ void ESP01_AttachDebugStr(void (*aESP01DbgStr)(const char *dbgStr));
  */
 int ESP01_IsHDRRST();
 
+/**
+ * @brief ESP01_ResetActivity Reinicia el contador de tiempo de vida de la conexión.
+ * Debe llamarse cada vez que se reciba un comando válido del Host.
+ */
+void ESP01_ResetActivity(void);
 
 #endif /* ESP01_H_ */
